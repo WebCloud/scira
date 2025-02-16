@@ -1,9 +1,6 @@
 // /app/api/chat/route.ts
 import { getGroupConfig } from '@/app/actions';
 import { serverEnv } from '@/env/server';
-import { xai } from '@ai-sdk/xai';
-import { anthropic } from '@ai-sdk/anthropic';
-import { groq } from '@ai-sdk/groq';
 import CodeInterpreter from '@e2b/code-interpreter';
 import { tavily } from '@tavily/core';
 import {
@@ -12,8 +9,6 @@ import {
     streamText,
     tool,
     createDataStreamResponse,
-    wrapLanguageModel,
-    extractReasoningMiddleware,
     customProvider,
     generateObject,
 } from 'ai';
@@ -24,11 +19,8 @@ const scira = customProvider({
     languageModels: {
         'scira-default': ollama('qwen2.5-coder:14b', { structuredOutputs: true, simulateStreaming: true }),
         'scira-llama': ollama('llama3.1:8b', { structuredOutputs: true, simulateStreaming: true }),
-        'scira-sonnet': anthropic('claude-3-5-sonnet-20241022'),
-        'scira-r1': wrapLanguageModel({
-            model: groq('deepseek-r1-distill-llama-70b'),
-            middleware: extractReasoningMiddleware({ tagName: 'think' }),
-        }),
+        'scira-sonnet': ollama('mixtral:8x7b', { structuredOutputs: true, simulateStreaming: true }),
+        'scira-r1': ollama('deepseek-r1:14b', { structuredOutputs: true, simulateStreaming: true }),
         'scira-llama-groq': ollama('llama3.1:8b', { structuredOutputs: true, simulateStreaming: true }),
     },
 });
@@ -96,7 +88,7 @@ export async function POST(req: Request) {
         execute: async (dataStream) => {
             const result = streamText({
                 model: scira.languageModel(model),
-                maxSteps: 5,
+                maxSteps: 15,
                 providerOptions: {
                     scira: {
                         reasoning_format: group === 'fun' ? 'raw' : 'parsed',
@@ -325,6 +317,10 @@ export async function POST(req: Request) {
                             const { object: researchPlan } = await generateObject({
                                 model: ollama('llama3.1:8b', { structuredOutputs: true, simulateStreaming: true }),
                                 temperature: 0.5,
+                                system: `You are a research assistant.
+                                PAY ATTENTION TO THE DEPTH AND THE TOPIC.
+                                PAY ATTENTION TO THE PRIORITY AND IMPORTANCE RANGE OF THE QUERIES (between 1 and 5).
+                                YOU MUST RESPECT THE SCHEMA GIVEN.`,
                                 schema: z.object({
                                     search_queries: z
                                         .array(
@@ -421,7 +417,7 @@ export async function POST(req: Request) {
                                         timestamp: Date.now(),
                                     },
                                 });
-                                if (step.type === 'web') {
+                                if (step.type === 'web' || step.type === 'academic') {
                                     const webResults = await tvly.search(step.query.query, {
                                         searchDepth: depth,
                                         includeAnswer: true,
@@ -481,8 +477,10 @@ export async function POST(req: Request) {
                                     },
                                 });
                                 const { object: analysisResult } = await generateObject({
-                                    model: xai('grok-beta'),
+                                    model: ollama('llama3.1:8b', { structuredOutputs: true, simulateStreaming: true }),
                                     temperature: 0.5,
+                                    system: `You are a research assistant. The confidence of the evidence is a number between 0 and 1 representing a percentage. RESPECT THE SCHEMA GIVEN.
+                                    `,
                                     schema: z.object({
                                         findings: z.array(
                                             z.object({
