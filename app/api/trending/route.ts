@@ -1,6 +1,7 @@
 import { xai } from '@ai-sdk/xai';
 import { generateObject } from 'ai';
 import { NextResponse } from 'next/server';
+import { ollama } from 'ollama-ai-provider';
 import { z } from 'zod';
 
 export interface TrendingQuery {
@@ -52,7 +53,7 @@ async function fetchGoogleTrends(): Promise<TrendingQuery[]> {
             const itemsWithCategoryAndIcon = await Promise.all(
                 items.map(async (item) => {
                     const { object } = await generateObject({
-                        model: xai("grok-beta"),
+                        model: ollama('llama3.1:8b'),
                         prompt: `Give the category for the topic from the existing values only in lowercase only: ${item.replace(
                             /<\/?title>/g,
                             '',

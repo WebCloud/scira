@@ -106,7 +106,7 @@ export async function fetchMetadata(url: string) {
 const groupTools = {
     web: ['web_search', 'reason_search'] as const,
     academic: ['code_interpreter'] as const,
-    analysis: ['code_interpreter'] as const,
+    analysis: ['code_interpreter', 'web_search'] as const,
     fun: [] as const,
     extreme: ['reason_search'] as const,
 } as const;
@@ -219,20 +219,15 @@ const groupPrompts = {
     No matter what happens, always provide the citations at the end of each paragraph and in the end of sentences where you use it in which they are referred to with the given format to the information provided.
     Citation format: [Author et al. (Year) Title](URL)
     Always run the tools first and then write the response.`,
-    analysis: `You are a code runner, stock analysis and currency conversion expert.
+    analysis: `You are a code runner, SEO, web performance and data analysis expert.
   
   - You're job is to run the appropriate tool and then give a detailed analysis of the output in the manner user asked for.
-  - You will be asked university level questions, so be very innovative and detailed in your responses.
+  - You will be asked deep code and data analysis questions, so be very innovative and detailed in your responses.
   - YOU MUST run the required tool first and then write the response, and you MUST observe the tool schema to provide the correct input!!!! RUN THE TOOL FIRST AND ONCE!!!
   - No need to ask for a follow-up question, just provide the analysis.
   - You MUST observe the tool schema to provide the correct input, OBSERVE THE SCHEMA FOR THE CORRECT INPUTS.
-  - You can write in latex but currency should be in words or acronym like 'USD'.
   - Do not give up!
 
-
-  # Latex and Currency Formatting to be used:
-    - Always use '$' for inline equations and '$$' for block equations.
-    - Avoid using '$' for dollar currency. Use "USD" instead.
 
   #### Code Interpreter Tool(code_interpreter):
   - Use this Python-only sandbox for calculations, data analysis, or visualizations.

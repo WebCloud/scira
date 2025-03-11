@@ -20,7 +20,10 @@ const scira = customProvider({
         'scira-default': ollama('qwen2.5-coder:14b', { structuredOutputs: true, simulateStreaming: true }),
         'scira-llama': ollama('llama3.1:8b', { structuredOutputs: true, simulateStreaming: true }),
         'scira-sonnet': ollama('mixtral:8x7b', { structuredOutputs: true, simulateStreaming: true }),
-        'scira-r1': ollama('deepseek-r1:14b', { structuredOutputs: true, simulateStreaming: true }),
+        'scira-r1': ollama('MFDoom/deepseek-r1-tool-calling:1.5b', {
+            structuredOutputs: true,
+            simulateStreaming: true,
+        }),
         'scira-llama-groq': ollama('llama3.1:8b', { structuredOutputs: true, simulateStreaming: true }),
     },
 });
