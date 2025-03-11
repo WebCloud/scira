@@ -160,7 +160,8 @@ const deduplicateByDomainAndUrl = <T extends { url: string }>(items: T[]): T[] =
 
 // Modify the POST function to use the new handler
 export async function POST(req: Request) {
-    const { messages, model, group, user_id } = await req.json();
+    const { messages, model, group, user_id, insights } = await req.json();
+    console.log('insights on the backend', insights);
     const { tools: activeTools, systemPrompt, toolInstructions, responseGuidelines } = await getGroupConfig(group);
     const geo = geolocation(req);
 
@@ -764,7 +765,7 @@ export async function POST(req: Request) {
                                         },
                                     });
 
-                                    if (step.type === 'web') {
+                                    if (step.type === 'web' || step.type === 'academic') {
                                         const webResults = await tvly.search(step.query.query, {
                                             searchDepth: depth,
                                             includeAnswer: true,
@@ -780,61 +781,6 @@ export async function POST(req: Request) {
                                                 url: r.url,
                                                 content: r.content,
                                             })),
-                                        });
-                                        completedSteps++;
-                                    } else if (step.type === 'academic') {
-                                        const academicResults = await exa.searchAndContents(step.query.query, {
-                                            type: 'auto',
-                                            numResults: Math.min(6 - step.query.priority, 5),
-                                            category: 'research paper',
-                                            summary: true,
-                                        });
-
-                                        searchResults.push({
-                                            type: 'academic',
-                                            query: step.query,
-                                            results: academicResults.results.map((r) => ({
-                                                source: 'academic',
-                                                title: r.title || '',
-                                                url: r.url || '',
-                                                content: r.summary || '',
-                                            })),
-                                        });
-                                        completedSteps++;
-                                    } else if (step.type === 'x') {
-                                        // Extract tweet ID from URL
-                                        const extractTweetId = (url: string): string | null => {
-                                            const match = url.match(/(?:twitter\.com|x\.com)\/\w+\/status\/(\d+)/);
-                                            return match ? match[1] : null;
-                                        };
-
-                                        const xResults = await exa.searchAndContents(step.query.query, {
-                                            type: 'neural',
-                                            useAutoprompt: true,
-                                            numResults: step.query.priority,
-                                            text: true,
-                                            highlights: true,
-                                            includeDomains: ['twitter.com', 'x.com'],
-                                        });
-
-                                        // Process tweets to include tweet IDs
-                                        const processedTweets = xResults.results
-                                            .map((result) => {
-                                                const tweetId = extractTweetId(result.url);
-                                                return {
-                                                    source: 'x' as const,
-                                                    title: result.title || result.author || 'Tweet',
-                                                    url: result.url,
-                                                    content: result.text || '',
-                                                    tweetId: tweetId || undefined,
-                                                };
-                                            })
-                                            .filter((tweet) => tweet.tweetId); // Only include tweets with valid IDs
-
-                                        searchResults.push({
-                                            type: 'x',
-                                            query: step.query,
-                                            results: processedTweets,
                                         });
                                         completedSteps++;
                                     }

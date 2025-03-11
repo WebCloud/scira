@@ -6,7 +6,7 @@ import { ChatRequestOptions, CreateMessage, Message } from 'ai';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "./hover-card"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from './hover-card';
 import useWindowSize from '@/hooks/use-window-size';
 import { X } from 'lucide-react';
 import {
@@ -14,12 +14,13 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from '@/components/ui/dropdown-menu';
 import { cn, SearchGroup, SearchGroupId, searchGroups } from '@/lib/utils';
 import { TextMorph } from '@/components/core/text-morph';
 import { Upload } from 'lucide-react';
-import { Mountain } from "lucide-react"
+import { Mountain } from 'lucide-react';
 import { UIMessage } from '@ai-sdk/ui-utils';
+import { analyzeTraceFromFile } from '@/lib/trace';
 
 interface ModelSwitcherProps {
     selectedModel: string;
@@ -48,28 +49,76 @@ const XAIIcon = ({ className }: { className?: string }) => (
 );
 
 const AnthropicIcon = ({ className }: { className?: string }) => (
-    <svg
-        role="img"
-        viewBox="0 0 24 24"
-        xmlns="http://www.w3.org/2000/svg"
-        className={className}
-    >
+    <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" className={className}>
         <title>Anthropic</title>
-        <path fill="currentColor" d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z" />
+        <path
+            fill="currentColor"
+            d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"
+        />
     </svg>
 );
 
 const models = [
-    { value: "scira-default", label: "Grok 2.0", icon: XAIIcon, iconClass: "!text-neutral-300", description: "xAI's Grok 2.0 model", color: "glossyblack", vision: false, experimental: false, category: "Stable" },
-    { value: "scira-vision", label: "Grok 2.0 Vision", icon: XAIIcon, iconClass: "!text-neutral-300", description: "xAI's Grok 2.0 Vision model", color: "steel", vision: true, experimental: false, category: "Stable" },
-    { value: "scira-sonnet", label: "Claude 3.7 Sonnet", icon: AnthropicIcon, iconClass: "!text-neutral-900 dark:!text-white", description: "Anthropic's G.O.A.T. model", color: "purple", vision: true, experimental: false, category: "Stable" },
-    { value: "scira-llama", label: "Llama 3.3 70B", icon: "/cerebras.png", iconClass: "!text-neutral-900 dark:!text-white", description: "Meta's Llama model by Cerebras", color: "offgray", vision: false, experimental: true, category: "Experimental" },
-    { value: "scira-r1", label: "DeepSeek R1 Distilled", icon: "/groq.svg", iconClass: "!text-neutral-900 dark:!text-white", description: "DeepSeek R1 model by Groq", color: "sapphire", vision: false, experimental: true, category: "Experimental" },
+    {
+        value: 'scira-default',
+        label: 'Grok 2.0',
+        icon: XAIIcon,
+        iconClass: '!text-neutral-300',
+        description: "xAI's Grok 2.0 model",
+        color: 'glossyblack',
+        vision: false,
+        experimental: false,
+        category: 'Stable',
+    },
+    {
+        value: 'scira-vision',
+        label: 'Grok 2.0 Vision',
+        icon: XAIIcon,
+        iconClass: '!text-neutral-300',
+        description: "xAI's Grok 2.0 Vision model",
+        color: 'steel',
+        vision: true,
+        experimental: false,
+        category: 'Stable',
+    },
+    {
+        value: 'scira-sonnet',
+        label: 'Claude 3.7 Sonnet',
+        icon: AnthropicIcon,
+        iconClass: '!text-neutral-900 dark:!text-white',
+        description: "Anthropic's G.O.A.T. model",
+        color: 'purple',
+        vision: true,
+        experimental: false,
+        category: 'Stable',
+    },
+    {
+        value: 'scira-llama',
+        label: 'Llama 3.3 70B',
+        icon: '/cerebras.png',
+        iconClass: '!text-neutral-900 dark:!text-white',
+        description: "Meta's Llama model by Cerebras",
+        color: 'offgray',
+        vision: false,
+        experimental: true,
+        category: 'Experimental',
+    },
+    {
+        value: 'scira-r1',
+        label: 'DeepSeek R1 Distilled',
+        icon: '/groq.svg',
+        iconClass: '!text-neutral-900 dark:!text-white',
+        description: 'DeepSeek R1 model by Groq',
+        color: 'sapphire',
+        vision: false,
+        experimental: true,
+        category: 'Experimental',
+    },
 ];
 
 const getColorClasses = (color: string, isSelected: boolean = false) => {
-    const baseClasses = "transition-colors duration-200";
-    const selectedClasses = isSelected ? "!bg-opacity-100 dark:!bg-opacity-100" : "";
+    const baseClasses = 'transition-colors duration-200';
+    const selectedClasses = isSelected ? '!bg-opacity-100 dark:!bg-opacity-100' : '';
 
     switch (color) {
         case 'glossyblack':
@@ -101,22 +150,30 @@ const getColorClasses = (color: string, isSelected: boolean = false) => {
                 ? `${baseClasses} ${selectedClasses} !bg-neutral-500 dark:!bg-neutral-700 !text-white hover:!bg-neutral-600 dark:hover:!bg-neutral-800 !border-neutral-500 dark:!border-neutral-700`
                 : `${baseClasses} !text-neutral-600 dark:!text-neutral-300 hover:!bg-neutral-500 hover:!text-white dark:hover:!bg-neutral-700 dark:hover:!text-white`;
     }
-}
+};
 
-const ModelSwitcher: React.FC<ModelSwitcherProps> = ({ selectedModel, setSelectedModel, className, showExperimentalModels, attachments, messages, status }) => {
-    const selectedModelData = models.find(model => model.value === selectedModel);
+const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
+    selectedModel,
+    setSelectedModel,
+    className,
+    showExperimentalModels,
+    attachments,
+    messages,
+    status,
+}) => {
+    const selectedModelData = models.find((model) => model.value === selectedModel);
     const [isOpen, setIsOpen] = useState(false);
     const isProcessing = status === 'submitted' || status === 'streaming';
 
     // Check for attachments in current and previous messages
-    const hasAttachments = attachments.length > 0 || messages.some(msg =>
-        msg.experimental_attachments && msg.experimental_attachments.length > 0
-    );
+    const hasAttachments =
+        attachments.length > 0 ||
+        messages.some((msg) => msg.experimental_attachments && msg.experimental_attachments.length > 0);
 
     // Filter models based on attachments first, then experimental status
     const filteredModels = hasAttachments
-        ? models.filter(model => model.vision)
-        : models.filter(model => showExperimentalModels ? true : !model.experimental);
+        ? models.filter((model) => model.vision)
+        : models.filter((model) => (showExperimentalModels ? true : !model.experimental));
 
     // Group filtered models by category
     const groupedModels = filteredModels.reduce((acc, model) => {
@@ -130,61 +187,48 @@ const ModelSwitcher: React.FC<ModelSwitcherProps> = ({ selectedModel, setSelecte
 
     // Only show divider if we have multiple categories and no attachments
     const showDivider = (category: string) => {
-        return !hasAttachments && showExperimentalModels && category === "Stable";
+        return !hasAttachments && showExperimentalModels && category === 'Stable';
     };
 
     return (
-        <DropdownMenu
-            onOpenChange={setIsOpen}
-            modal={false}
-            open={isOpen && !isProcessing}
-        >
+        <DropdownMenu onOpenChange={setIsOpen} modal={false} open={isOpen && !isProcessing}>
             <DropdownMenuTrigger
                 className={cn(
-                    "flex items-center gap-2 p-2 sm:px-3 h-8",
-                    "rounded-full transition-all duration-300",
-                    "border border-neutral-200 dark:border-neutral-800",
-                    "hover:shadow-md",
-                    getColorClasses(selectedModelData?.color || "neutral", true),
-                    isProcessing && "opacity-50 pointer-events-none",
-                    className
+                    'flex items-center gap-2 p-2 sm:px-3 h-8',
+                    'rounded-full transition-all duration-300',
+                    'border border-neutral-200 dark:border-neutral-800',
+                    'hover:shadow-md',
+                    getColorClasses(selectedModelData?.color || 'neutral', true),
+                    isProcessing && 'opacity-50 pointer-events-none',
+                    className,
                 )}
                 disabled={isProcessing}
             >
-                {selectedModelData && (
-                    typeof selectedModelData.icon === 'string' ? (
+                {selectedModelData &&
+                    (typeof selectedModelData.icon === 'string' ? (
                         <img
                             src={selectedModelData.icon}
                             alt={selectedModelData.label}
-                            className={cn(
-                                "w-3.5 h-3.5 object-contain",
-                                selectedModelData.iconClass
-                            )}
+                            className={cn('w-3.5 h-3.5 object-contain', selectedModelData.iconClass)}
                         />
                     ) : (
-                        <selectedModelData.icon
-                            className={cn(
-                                "w-3.5 h-3.5",
-                                selectedModelData.iconClass
-                            )}
-                        />
-                    )
-                )}
+                        <selectedModelData.icon className={cn('w-3.5 h-3.5', selectedModelData.iconClass)} />
+                    ))}
                 <span className="hidden sm:block text-xs font-medium overflow-hidden">
                     <TextMorph
                         variants={{
                             initial: { opacity: 0, y: 10 },
                             animate: { opacity: 1, y: 0 },
-                            exit: { opacity: 0, y: -10 }
+                            exit: { opacity: 0, y: -10 },
                         }}
                         transition={{
-                            type: "spring",
+                            type: 'spring',
                             stiffness: 500,
                             damping: 30,
-                            mass: 0.5
+                            mass: 0.5,
                         }}
                     >
-                        {selectedModelData?.label || ""}
+                        {selectedModelData?.label || ''}
                     </TextMorph>
                 </span>
             </DropdownMenuTrigger>
@@ -194,9 +238,7 @@ const ModelSwitcher: React.FC<ModelSwitcherProps> = ({ selectedModel, setSelecte
                 sideOffset={8}
             >
                 {Object.entries(groupedModels).map(([category, categoryModels], categoryIndex) => (
-                    <div key={category} className={cn(
-                        categoryIndex > 0 && "mt-1"
-                    )}>
+                    <div key={category} className={cn(categoryIndex > 0 && 'mt-1')}>
                         <div className="px-2 py-1.5 text-[11px] font-medium text-neutral-500 dark:text-neutral-400 select-none">
                             {category}
                         </div>
@@ -205,44 +247,40 @@ const ModelSwitcher: React.FC<ModelSwitcherProps> = ({ selectedModel, setSelecte
                                 <DropdownMenuItem
                                     key={model.value}
                                     onSelect={() => {
-                                        console.log("Selected model:", model.value);
+                                        console.log('Selected model:', model.value);
                                         setSelectedModel(model.value.trim());
                                     }}
                                     className={cn(
-                                        "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs",
-                                        "transition-all duration-200",
-                                        "hover:shadow-sm",
-                                        getColorClasses(model.color, selectedModel === model.value)
+                                        'flex items-center gap-2 px-2 py-1.5 rounded-md text-xs',
+                                        'transition-all duration-200',
+                                        'hover:shadow-sm',
+                                        getColorClasses(model.color, selectedModel === model.value),
                                     )}
                                 >
-                                    <div className={cn(
-                                        "p-1.5 rounded-md",
-                                        selectedModel === model.value
-                                            ? "bg-black/10 dark:bg-white/10"
-                                            : "bg-black/5 dark:bg-white/5",
-                                        "group-hover:bg-black/10 dark:group-hover:bg-white/10"
-                                    )}>
+                                    <div
+                                        className={cn(
+                                            'p-1.5 rounded-md',
+                                            selectedModel === model.value
+                                                ? 'bg-black/10 dark:bg-white/10'
+                                                : 'bg-black/5 dark:bg-white/5',
+                                            'group-hover:bg-black/10 dark:group-hover:bg-white/10',
+                                        )}
+                                    >
                                         {typeof model.icon === 'string' ? (
                                             <img
                                                 src={model.icon}
                                                 alt={model.label}
-                                                className={cn(
-                                                    "w-3 h-3 object-contain",
-                                                    model.iconClass
-                                                )}
+                                                className={cn('w-3 h-3 object-contain', model.iconClass)}
                                             />
                                         ) : (
-                                            <model.icon
-                                                className={cn(
-                                                    "w-3 h-3",
-                                                    model.iconClass
-                                                )}
-                                            />
+                                            <model.icon className={cn('w-3 h-3', model.iconClass)} />
                                         )}
                                     </div>
                                     <div className="flex flex-col gap-px min-w-0">
                                         <div className="font-medium truncate">{model.label}</div>
-                                        <div className="text-[10px] opacity-80 truncate leading-tight">{model.description}</div>
+                                        <div className="text-[10px] opacity-80 truncate leading-tight">
+                                            {model.description}
+                                        </div>
                                     </div>
                                 </DropdownMenuItem>
                             ))}
@@ -266,13 +304,7 @@ interface Attachment {
 
 const ArrowUpIcon = ({ size = 16 }: { size?: number }) => {
     return (
-        <svg
-            height={size}
-            strokeLinejoin="round"
-            viewBox="0 0 16 16"
-            width={size}
-            style={{ color: "currentcolor" }}
-        >
+        <svg height={size} strokeLinejoin="round" viewBox="0 0 16 16" width={size} style={{ color: 'currentcolor' }}>
             <path
                 fillRule="evenodd"
                 clipRule="evenodd"
@@ -285,18 +317,8 @@ const ArrowUpIcon = ({ size = 16 }: { size?: number }) => {
 
 const StopIcon = ({ size = 16 }: { size?: number }) => {
     return (
-        <svg
-            height={size}
-            viewBox="0 0 16 16"
-            width={size}
-            style={{ color: "currentcolor" }}
-        >
-            <path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M3 3H13V13H3V3Z"
-                fill="currentColor"
-            ></path>
+        <svg height={size} viewBox="0 0 16 16" width={size} style={{ color: 'currentcolor' }}>
+            <path fillRule="evenodd" clipRule="evenodd" d="M3 3H13V13H3V3Z" fill="currentColor"></path>
         </svg>
     );
 };
@@ -308,7 +330,7 @@ const PaperclipIcon = ({ size = 16 }: { size?: number }) => {
             strokeLinejoin="round"
             viewBox="0 0 16 16"
             width={size}
-            style={{ color: "currentcolor" }}
+            style={{ color: 'currentcolor' }}
             className="-rotate-45"
         >
             <path
@@ -321,13 +343,12 @@ const PaperclipIcon = ({ size = 16 }: { size?: number }) => {
     );
 };
 
-
 const MAX_IMAGES = 4;
 const MAX_INPUT_CHARS = 1000;
 
 const hasVisionSupport = (modelValue: string): boolean => {
-    const selectedModel = models.find(model => model.value === modelValue);
-    return selectedModel?.vision === true
+    const selectedModel = models.find((model) => model.value === modelValue);
+    return selectedModel?.vision === true;
 };
 
 const truncateFilename = (filename: string, maxLength: number = 20) => {
@@ -343,11 +364,7 @@ const CharacterCounter = ({ current, max }: { current: number; max: number }) =>
     const isOverLimit = percentage >= 100;
 
     // Twitter-like styling
-    const strokeColor = isOverLimit
-        ? 'stroke-red-500'
-        : isNearLimit
-            ? 'stroke-amber-500'
-            : 'stroke-neutral-400';
+    const strokeColor = isOverLimit ? 'stroke-red-500' : isNearLimit ? 'stroke-amber-500' : 'stroke-neutral-400';
 
     // Smaller size for more compact look
     const size = 16;
@@ -361,11 +378,13 @@ const CharacterCounter = ({ current, max }: { current: number; max: number }) =>
     const bgColor = isOverLimit
         ? 'bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
         : isNearLimit
-            ? 'bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
-            : 'bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700';
+        ? 'bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700'
+        : 'bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700';
 
     return (
-        <div className={`relative flex items-center justify-center ${bgColor} rounded-full shadow-sm transition-all duration-200`}>
+        <div
+            className={`relative flex items-center justify-center ${bgColor} rounded-full shadow-sm transition-all duration-200`}
+        >
             <svg height={size} width={size} viewBox={`0 0 ${size} ${size}`} className="rotate-[-90deg]">
                 {/* Only show background circle when progress is visible */}
                 {current > 0 && (
@@ -396,7 +415,11 @@ const CharacterCounter = ({ current, max }: { current: number; max: number }) =>
     );
 };
 
-const AttachmentPreview: React.FC<{ attachment: Attachment | UploadingAttachment, onRemove: () => void, isUploading: boolean }> = ({ attachment, onRemove, isUploading }) => {
+const AttachmentPreview: React.FC<{
+    attachment: Attachment | UploadingAttachment;
+    onRemove: () => void;
+    isUploading: boolean;
+}> = ({ attachment, onRemove, isUploading }) => {
     const formatFileSize = (bytes: number): string => {
         if (bytes < 1024) return bytes + ' bytes';
         else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
@@ -418,9 +441,25 @@ const AttachmentPreview: React.FC<{ attachment: Attachment | UploadingAttachment
         >
             {isUploading ? (
                 <div className="w-10 h-10 flex items-center justify-center">
-                    <svg className="animate-spin h-5 w-5 text-neutral-500 dark:text-neutral-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    <svg
+                        className="animate-spin h-5 w-5 text-neutral-500 dark:text-neutral-400"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                    >
+                        <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                        ></circle>
+                        <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        ></path>
                     </svg>
                 </div>
             ) : isUploadingAttachment(attachment) ? (
@@ -448,7 +487,9 @@ const AttachmentPreview: React.FC<{ attachment: Attachment | UploadingAttachment
                             ></circle>
                         </svg>
                         <div className="absolute inset-0 flex items-center justify-center">
-                            <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">{Math.round(attachment.progress * 100)}%</span>
+                            <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+                                {Math.round(attachment.progress * 100)}%
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -476,7 +517,10 @@ const AttachmentPreview: React.FC<{ attachment: Attachment | UploadingAttachment
             <motion.button
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
-                onClick={(e) => { e.stopPropagation(); onRemove(); }}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove();
+                }}
                 className="absolute -top-2 -right-2 p-0.5 m-0 rounded-full bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-sm hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors z-20"
             >
                 <X className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
@@ -539,13 +583,13 @@ const ToolbarButton = ({ group, isSelected, onClick }: ToolbarButtonProps) => {
     const isMobile = width ? width < 768 : false;
 
     const commonClassNames = cn(
-        "relative flex items-center justify-center",
-        "size-8",
-        "rounded-full",
-        "transition-colors duration-300",
+        'relative flex items-center justify-center',
+        'size-8',
+        'rounded-full',
+        'transition-colors duration-300',
         isSelected
-            ? "bg-neutral-500 dark:bg-neutral-600 text-white dark:text-neutral-300"
-            : "text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/80"
+            ? 'bg-neutral-500 dark:bg-neutral-600 text-white dark:text-neutral-300'
+            : 'text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/80',
     );
 
     const handleClick = (e: React.MouseEvent) => {
@@ -581,28 +625,22 @@ const ToolbarButton = ({ group, isSelected, onClick }: ToolbarButtonProps) => {
 
     return (
         <HoverCard openDelay={100} closeDelay={50}>
-            <HoverCardTrigger asChild>
-                {button}
-            </HoverCardTrigger>
+            <HoverCardTrigger asChild>{button}</HoverCardTrigger>
             <HoverCardContent
                 side="bottom"
                 align="center"
                 sideOffset={6}
                 className={cn(
-                    "z-[100]",
-                    "w-44 p-2 rounded-lg",
-                    "border border-neutral-200 dark:border-neutral-700",
-                    "bg-white dark:bg-neutral-800 shadow-md",
-                    "transition-opacity duration-300"
+                    'z-[100]',
+                    'w-44 p-2 rounded-lg',
+                    'border border-neutral-200 dark:border-neutral-700',
+                    'bg-white dark:bg-neutral-800 shadow-md',
+                    'transition-opacity duration-300',
                 )}
             >
                 <div className="space-y-0.5">
-                    <h4 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                        {group.name}
-                    </h4>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-normal">
-                        {group.description}
-                    </p>
+                    <h4 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{group.name}</h4>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-normal">{group.description}</p>
                 </div>
             </HoverCardContent>
         </HoverCard>
@@ -635,54 +673,54 @@ const SelectionContent = ({ selectedGroup, onGroupSelect, status, onExpandChange
             layout={false}
             initial={false}
             animate={{
-                width: isExpanded && !isProcessing ? "auto" : "30px",
-                gap: isExpanded && !isProcessing ? "0.5rem" : 0,
-                paddingRight: isExpanded && !isProcessing ? "0.25rem" : 0,
+                width: isExpanded && !isProcessing ? 'auto' : '30px',
+                gap: isExpanded && !isProcessing ? '0.5rem' : 0,
+                paddingRight: isExpanded && !isProcessing ? '0.25rem' : 0,
             }}
             transition={{
                 duration: 0.2,
-                ease: "easeInOut",
+                ease: 'easeInOut',
             }}
             className={cn(
-                "inline-flex items-center min-w-[38px] p-0.5",
-                "rounded-full border border-neutral-200 dark:border-neutral-800",
-                "bg-white dark:bg-neutral-900 shadow-sm overflow-visible",
-                "relative z-10",
-                isProcessing && "opacity-50 pointer-events-none"
+                'inline-flex items-center min-w-[38px] p-0.5',
+                'rounded-full border border-neutral-200 dark:border-neutral-800',
+                'bg-white dark:bg-neutral-900 shadow-sm overflow-visible',
+                'relative z-10',
+                isProcessing && 'opacity-50 pointer-events-none',
             )}
             onMouseEnter={() => !isProcessing && setIsExpanded(true)}
             onMouseLeave={() => !isProcessing && setIsExpanded(false)}
         >
             <AnimatePresence initial={false}>
-                {searchGroups.filter(group => group.show).map((group, index, filteredGroups) => {
-                    const showItem = (isExpanded && !isProcessing) || selectedGroup === group.id;
-                    const isLastItem = index === filteredGroups.length - 1;
-                    return (
-                        <motion.div
-                            key={group.id}
-                            layout={false}
-                            animate={{
-                                width: showItem ? "28px" : 0,
-                                opacity: showItem ? 1 : 0,
-                                marginRight: (showItem && isLastItem && isExpanded) ? "2px" : 0
-                            }}
-                            transition={{
-                                duration: 0.15,
-                                ease: "easeInOut"
-                            }}
-                            className={cn(
-                                isLastItem && isExpanded && showItem ? "pr-0.5" : ""
-                            )}
-                            style={{ margin: 0 }}
-                        >
-                            <ToolbarButton
-                                group={group}
-                                isSelected={selectedGroup === group.id}
-                                onClick={() => !isProcessing && onGroupSelect(group)}
-                            />
-                        </motion.div>
-                    );
-                })}
+                {searchGroups
+                    .filter((group) => group.show)
+                    .map((group, index, filteredGroups) => {
+                        const showItem = (isExpanded && !isProcessing) || selectedGroup === group.id;
+                        const isLastItem = index === filteredGroups.length - 1;
+                        return (
+                            <motion.div
+                                key={group.id}
+                                layout={false}
+                                animate={{
+                                    width: showItem ? '28px' : 0,
+                                    opacity: showItem ? 1 : 0,
+                                    marginRight: showItem && isLastItem && isExpanded ? '2px' : 0,
+                                }}
+                                transition={{
+                                    duration: 0.15,
+                                    ease: 'easeInOut',
+                                }}
+                                className={cn(isLastItem && isExpanded && showItem ? 'pr-0.5' : '')}
+                                style={{ margin: 0 }}
+                            >
+                                <ToolbarButton
+                                    group={group}
+                                    isSelected={selectedGroup === group.id}
+                                    onClick={() => !isProcessing && onGroupSelect(group)}
+                                />
+                            </motion.div>
+                        );
+                    })}
             </AnimatePresence>
         </motion.div>
     );
@@ -727,6 +765,7 @@ const FormComponent: React.FC<FormComponentProps> = ({
     const [isDragging, setIsDragging] = useState(false);
     const [isGroupSelectorExpanded, setIsGroupSelectorExpanded] = useState(false);
     const [isExceedingLimit, setIsExceedingLimit] = useState(false);
+    const [traceAnalysis, setTraceAnalysis] = useState<any>(null);
 
     // Add a ref to track the initial group selection
     const initialGroupRef = useRef(selectedGroup);
@@ -770,10 +809,13 @@ const FormComponent: React.FC<FormComponentProps> = ({
         setIsFocused(false);
     };
 
-    const handleGroupSelect = useCallback((group: SearchGroup) => {
-        setSelectedGroup(group.id);
-        inputRef.current?.focus();
-    }, [setSelectedGroup, inputRef]);
+    const handleGroupSelect = useCallback(
+        (group: SearchGroup) => {
+            setSelectedGroup(group.id);
+            inputRef.current?.focus();
+        },
+        [setSelectedGroup, inputRef],
+    );
 
     const uploadFile = async (file: File): Promise<Attachment> => {
         const formData = new FormData();
@@ -792,52 +834,55 @@ const FormComponent: React.FC<FormComponentProps> = ({
                 throw new Error('Failed to upload file');
             }
         } catch (error) {
-            console.error("Error uploading file:", error);
-            toast.error("Failed to upload file, please try again!");
+            console.error('Error uploading file:', error);
+            toast.error('Failed to upload file, please try again!');
             throw error;
         }
     };
 
-    const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(event.target.files || []);
-        const totalAttachments = attachments.length + files.length;
+    const handleFileChange = useCallback(
+        async (event: React.ChangeEvent<HTMLInputElement>) => {
+            const files = Array.from(event.target.files || []);
+            const totalAttachments = attachments.length + files.length;
 
-        if (totalAttachments > MAX_IMAGES) {
-            toast.error(`You can only attach up to ${MAX_IMAGES} images.`);
-            return;
-        }
+            if (totalAttachments > MAX_IMAGES) {
+                toast.error(`You can only attach up to ${MAX_IMAGES} images.`);
+                return;
+            }
 
-        setUploadQueue(files.map((file) => file.name));
+            setUploadQueue(files.map((file) => file.name));
 
-        try {
-            const uploadPromises = files.map((file) => uploadFile(file));
-            const uploadedAttachments = await Promise.all(uploadPromises);
-            setAttachments((currentAttachments) => [
-                ...currentAttachments,
-                ...uploadedAttachments,
-            ]);
-        } catch (error) {
-            console.error("Error uploading files!", error);
-            toast.error("Failed to upload one or more files. Please try again.");
-        } finally {
-            setUploadQueue([]);
-            event.target.value = '';
-        }
-    }, [attachments, setAttachments]);
+            try {
+                const uploadPromises = files.map((file) => uploadFile(file));
+                const uploadedAttachments = await Promise.all(uploadPromises);
+                setAttachments((currentAttachments) => [...currentAttachments, ...uploadedAttachments]);
+            } catch (error) {
+                console.error('Error uploading files!', error);
+                toast.error('Failed to upload one or more files. Please try again.');
+            } finally {
+                setUploadQueue([]);
+                event.target.value = '';
+            }
+        },
+        [attachments, setAttachments],
+    );
 
     const removeAttachment = (index: number) => {
-        setAttachments(prev => prev.filter((_, i) => i !== index));
+        setAttachments((prev) => prev.filter((_, i) => i !== index));
     };
 
-    const handleDragOver = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (attachments.length >= MAX_IMAGES) return;
+    const handleDragOver = useCallback(
+        (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (attachments.length >= MAX_IMAGES) return;
 
-        if (e.dataTransfer.items && e.dataTransfer.items[0].kind === "file") {
-            setIsDragging(true);
-        }
-    }, [attachments.length]);
+            if (e.dataTransfer.items && e.dataTransfer.items[0].kind === 'file') {
+                setIsDragging(true);
+            }
+        },
+        [attachments.length],
+    );
 
     const handleDragLeave = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -846,104 +891,112 @@ const FormComponent: React.FC<FormComponentProps> = ({
     }, []);
 
     const getFirstVisionModel = useCallback(() => {
-        return models.find(model => model.vision)?.value || selectedModel;
+        return models.find((model) => model.vision)?.value || selectedModel;
     }, [selectedModel]);
 
-    const handleDrop = useCallback(async (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDragging(false);
+    const handleDrop = useCallback(
+        async (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsDragging(false);
 
-        const files = Array.from(e.dataTransfer.files).filter(file =>
-            file.type.startsWith('image/')
-        );
+            const files = Array.from(e.dataTransfer.files).filter(
+                (file) => file.type.startsWith('image/') || file.type.startsWith('application/json'),
+            );
 
-        if (files.length === 0) {
-            toast.error("Only image files are supported");
-            return;
-        }
+            if (files.length === 0) {
+                toast.error('Only image files are supported');
+                return;
+            }
 
-        const totalAttachments = attachments.length + files.length;
-        if (totalAttachments > MAX_IMAGES) {
-            toast.error(`You can only attach up to ${MAX_IMAGES} images.`);
-            return;
-        }
+            if (files[0].type.startsWith('application/json')) {
+                const trace = await analyzeTraceFromFile(files[0]);
+                setTraceAnalysis(trace);
 
-        // Switch to vision model if current model doesn't support vision
-        const currentModel = models.find(m => m.value === selectedModel);
-        if (!currentModel?.vision) {
-            const visionModel = getFirstVisionModel();
-            setSelectedModel(visionModel);
-            toast.success(`Switched to ${models.find(m => m.value === visionModel)?.label} for image support`);
-        }
+                console.log('trace', trace);
+                return;
+            }
 
-        setUploadQueue(files.map((file) => file.name));
+            const totalAttachments = attachments.length + files.length;
+            if (totalAttachments > MAX_IMAGES) {
+                toast.error(`You can only attach up to ${MAX_IMAGES} images.`);
+                return;
+            }
 
-        try {
-            const uploadPromises = files.map((file) => uploadFile(file));
-            const uploadedAttachments = await Promise.all(uploadPromises);
-            setAttachments((currentAttachments) => [
-                ...currentAttachments,
-                ...uploadedAttachments,
-            ]);
-        } catch (error) {
-            console.error("Error uploading files!", error);
-            toast.error("Failed to upload one or more files. Please try again.");
-        } finally {
-            setUploadQueue([]);
-        }
-    }, [attachments.length, setAttachments, uploadFile, selectedModel, setSelectedModel, getFirstVisionModel]);
+            // Switch to vision model if current model doesn't support vision
+            const currentModel = models.find((m) => m.value === selectedModel);
+            if (!currentModel?.vision) {
+                const visionModel = getFirstVisionModel();
+                setSelectedModel(visionModel);
+                toast.success(`Switched to ${models.find((m) => m.value === visionModel)?.label} for image support`);
+            }
 
-    const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
-        const items = Array.from(e.clipboardData.items);
-        const imageItems = items.filter(item => item.type.startsWith('image/'));
+            setUploadQueue(files.map((file) => file.name));
 
-        if (imageItems.length === 0) return;
+            try {
+                const uploadPromises = files.map((file) => uploadFile(file));
+                const uploadedAttachments = await Promise.all(uploadPromises);
+                setAttachments((currentAttachments) => [...currentAttachments, ...uploadedAttachments]);
+            } catch (error) {
+                console.error('Error uploading files!', error);
+                toast.error('Failed to upload one or more files. Please try again.');
+            } finally {
+                setUploadQueue([]);
+            }
+        },
+        [attachments.length, setAttachments, uploadFile, selectedModel, setSelectedModel, getFirstVisionModel],
+    );
 
-        // Prevent default paste behavior if there are images
-        e.preventDefault();
+    const handlePaste = useCallback(
+        async (e: React.ClipboardEvent) => {
+            const items = Array.from(e.clipboardData.items);
+            const imageItems = items.filter((item) => item.type.startsWith('image/'));
 
-        const totalAttachments = attachments.length + imageItems.length;
-        if (totalAttachments > MAX_IMAGES) {
-            toast.error(`You can only attach up to ${MAX_IMAGES} images.`);
-            return;
-        }
+            if (imageItems.length === 0) return;
 
-        // Switch to vision model if needed
-        const currentModel = models.find(m => m.value === selectedModel);
-        if (!currentModel?.vision) {
-            const visionModel = getFirstVisionModel();
-            setSelectedModel(visionModel);
-            toast.success(`Switched to ${models.find(m => m.value === visionModel)?.label} for image support`);
-        }
+            // Prevent default paste behavior if there are images
+            e.preventDefault();
 
-        setUploadQueue(imageItems.map((_, i) => `Pasted Image ${i + 1}`));
+            const totalAttachments = attachments.length + imageItems.length;
+            if (totalAttachments > MAX_IMAGES) {
+                toast.error(`You can only attach up to ${MAX_IMAGES} images.`);
+                return;
+            }
 
-        try {
-            const files = imageItems.map(item => item.getAsFile()).filter(Boolean) as File[];
-            const uploadPromises = files.map(file => uploadFile(file));
-            const uploadedAttachments = await Promise.all(uploadPromises);
+            // Switch to vision model if needed
+            const currentModel = models.find((m) => m.value === selectedModel);
+            if (!currentModel?.vision) {
+                const visionModel = getFirstVisionModel();
+                setSelectedModel(visionModel);
+                toast.success(`Switched to ${models.find((m) => m.value === visionModel)?.label} for image support`);
+            }
 
-            setAttachments(currentAttachments => [
-                ...currentAttachments,
-                ...uploadedAttachments,
-            ]);
+            setUploadQueue(imageItems.map((_, i) => `Pasted Image ${i + 1}`));
 
-            toast.success('Image pasted successfully');
-        } catch (error) {
-            console.error("Error uploading pasted files!", error);
-            toast.error("Failed to upload pasted image. Please try again.");
-        } finally {
-            setUploadQueue([]);
-        }
-    }, [attachments.length, setAttachments, uploadFile, selectedModel, setSelectedModel, getFirstVisionModel]);
+            try {
+                const files = imageItems.map((item) => item.getAsFile()).filter(Boolean) as File[];
+                const uploadPromises = files.map((file) => uploadFile(file));
+                const uploadedAttachments = await Promise.all(uploadPromises);
+
+                setAttachments((currentAttachments) => [...currentAttachments, ...uploadedAttachments]);
+
+                toast.success('Image pasted successfully');
+            } catch (error) {
+                console.error('Error uploading pasted files!', error);
+                toast.error('Failed to upload pasted image. Please try again.');
+            } finally {
+                setUploadQueue([]);
+            }
+        },
+        [attachments.length, setAttachments, uploadFile, selectedModel, setSelectedModel, getFirstVisionModel],
+    );
 
     useEffect(() => {
         if (status !== 'ready' && inputRef.current) {
             const focusTimeout = setTimeout(() => {
                 if (isMounted.current && inputRef.current) {
                     inputRef.current.focus({
-                        preventScroll: true
+                        preventScroll: true,
                     });
                 }
             }, 300);
@@ -953,40 +1006,48 @@ const FormComponent: React.FC<FormComponentProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [status]);
 
-    const onSubmit = useCallback((event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        event.stopPropagation();
+    const onSubmit = useCallback(
+        (event: React.FormEvent<HTMLFormElement>) => {
+            event.preventDefault();
+            event.stopPropagation();
 
-        if (status !== 'ready') {
-            toast.error("Please wait for the current response to complete!");
-            return;
-        }
-
-        // Check if input exceeds character limit
-        if (input.length > MAX_INPUT_CHARS) {
-            toast.error(`Your input exceeds the maximum of ${MAX_INPUT_CHARS} characters. Please shorten your message.`);
-            return;
-        }
-
-        if (input.trim() || attachments.length > 0) {
-            setHasSubmitted(true);
-            lastSubmittedQueryRef.current = input.trim();
-
-            handleSubmit(event, {
-                experimental_attachments: attachments,
-            });
-
-            setAttachments([]);
-            if (fileInputRef.current) {
-                fileInputRef.current.value = '';
+            if (status !== 'ready') {
+                toast.error('Please wait for the current response to complete!');
+                return;
             }
-        } else {
-            toast.error("Please enter a search query or attach an image.");
-        }
-    }, [input, attachments, handleSubmit, setAttachments, fileInputRef, lastSubmittedQueryRef, status]);
+
+            // Check if input exceeds character limit
+            if (input.length > MAX_INPUT_CHARS) {
+                toast.error(
+                    `Your input exceeds the maximum of ${MAX_INPUT_CHARS} characters. Please shorten your message.`,
+                );
+                return;
+            }
+
+            if (input.trim() || attachments.length > 0) {
+                setHasSubmitted(true);
+                lastSubmittedQueryRef.current = input.trim();
+
+                handleSubmit(event, {
+                    experimental_attachments: attachments,
+                    body: {
+                        insights: Array.from(traceAnalysis?.insights ?? []),
+                    },
+                });
+
+                setAttachments([]);
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+            } else {
+                toast.error('Please enter a search query or attach an image.');
+            }
+        },
+        [input, attachments, handleSubmit, setAttachments, fileInputRef, lastSubmittedQueryRef, status],
+    );
 
     const submitForm = useCallback(() => {
-        onSubmit({ preventDefault: () => { }, stopPropagation: () => { } } as React.FormEvent<HTMLFormElement>);
+        onSubmit({ preventDefault: () => {}, stopPropagation: () => {} } as React.FormEvent<HTMLFormElement>);
         resetSuggestedQuestions();
 
         if (width && width > 768) {
@@ -1008,10 +1069,10 @@ const FormComponent: React.FC<FormComponentProps> = ({
     }, [attachments.length, status, fileInputRef]);
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (event.key === "Enter" && !event.shiftKey) {
+        if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
             if (status === 'submitted' || status === 'streaming') {
-                toast.error("Please wait for the response to complete!");
+                toast.error('Please wait for the response to complete!');
             } else {
                 submitForm();
                 if (width && width > 768) {
@@ -1030,12 +1091,12 @@ const FormComponent: React.FC<FormComponentProps> = ({
     return (
         <div
             className={cn(
-                "relative w-full flex flex-col gap-2 rounded-lg transition-all duration-300 !font-sans",
-                hasInteracted ? "z-[51]" : "",
-                isDragging && "ring-1 ring-neutral-300 dark:ring-neutral-700",
+                'relative w-full flex flex-col gap-2 rounded-lg transition-all duration-300 !font-sans',
+                hasInteracted ? 'z-[51]' : '',
+                isDragging && 'ring-1 ring-neutral-300 dark:ring-neutral-700',
                 attachments.length > 0 || uploadQueue.length > 0
-                    ? "bg-gray-100/70 dark:bg-neutral-800 p-1"
-                    : "bg-transparent"
+                    ? 'bg-gray-100/70 dark:bg-neutral-800 p-1'
+                    : 'bg-transparent',
             )}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -1066,8 +1127,24 @@ const FormComponent: React.FC<FormComponentProps> = ({
                 )}
             </AnimatePresence>
 
-            <input type="file" className="hidden" ref={fileInputRef} multiple onChange={handleFileChange} accept="image/*" tabIndex={-1} />
-            <input type="file" className="hidden" ref={postSubmitFileInputRef} multiple onChange={handleFileChange} accept="image/*" tabIndex={-1} />
+            <input
+                type="file"
+                className="hidden"
+                ref={fileInputRef}
+                multiple
+                onChange={handleFileChange}
+                accept="image/*"
+                tabIndex={-1}
+            />
+            <input
+                type="file"
+                className="hidden"
+                ref={postSubmitFileInputRef}
+                multiple
+                onChange={handleFileChange}
+                accept="image/*"
+                tabIndex={-1}
+            />
 
             {(attachments.length > 0 || uploadQueue.length > 0) && (
                 <div className="flex flex-row gap-2 overflow-x-auto py-2 max-h-32 z-10 px-1">
@@ -1082,13 +1159,15 @@ const FormComponent: React.FC<FormComponentProps> = ({
                     {uploadQueue.map((filename) => (
                         <AttachmentPreview
                             key={filename}
-                            attachment={{
-                                url: "",
-                                name: filename,
-                                contentType: "",
-                                size: 0,
-                            } as Attachment}
-                            onRemove={() => { }}
+                            attachment={
+                                {
+                                    url: '',
+                                    name: filename,
+                                    contentType: '',
+                                    size: 0,
+                                } as Attachment
+                            }
+                            onRemove={() => {}}
                             isUploading={true}
                         />
                     ))}
@@ -1098,24 +1177,24 @@ const FormComponent: React.FC<FormComponentProps> = ({
             <div className="relative rounded-lg bg-neutral-100 dark:bg-neutral-900">
                 <Textarea
                     ref={inputRef}
-                    placeholder={hasInteracted ? "Ask a new question..." : "Ask a question..."}
+                    placeholder={hasInteracted ? 'Ask a new question...' : 'Ask a question...'}
                     value={input}
                     onChange={handleInput}
                     disabled={isProcessing}
                     onFocus={handleFocus}
                     onBlur={handleBlur}
                     className={cn(
-                        "min-h-[72px] w-full resize-none rounded-lg",
-                        "text-base leading-relaxed",
-                        "bg-neutral-100 dark:bg-neutral-900",
-                        "border !border-neutral-200 dark:!border-neutral-700",
-                        "focus:!border-neutral-300 dark:focus:!border-neutral-600",
-                        isFocused ? "!border-neutral-300 dark:!border-neutral-600" : "",
-                        "text-neutral-900 dark:text-neutral-100",
-                        "focus:!ring-1 focus:!ring-neutral-300 dark:focus:!ring-neutral-600",
-                        "px-4 py-4 pb-16",
-                        "overflow-y-auto",
-                        "touch-manipulation",
+                        'min-h-[72px] w-full resize-none rounded-lg',
+                        'text-base leading-relaxed',
+                        'bg-neutral-100 dark:bg-neutral-900',
+                        'border !border-neutral-200 dark:!border-neutral-700',
+                        'focus:!border-neutral-300 dark:focus:!border-neutral-600',
+                        isFocused ? '!border-neutral-300 dark:!border-neutral-600' : '',
+                        'text-neutral-900 dark:text-neutral-100',
+                        'focus:!ring-1 focus:!ring-neutral-300 dark:focus:!ring-neutral-600',
+                        'px-4 py-4 pb-16',
+                        'overflow-y-auto',
+                        'touch-manipulation',
                     )}
                     style={{
                         maxHeight: `${MAX_HEIGHT}px`,
@@ -1135,23 +1214,22 @@ const FormComponent: React.FC<FormComponentProps> = ({
                     </div>
                 )}
 
-                <div className={cn(
-                    "absolute bottom-0 inset-x-0 flex justify-between items-center p-2 rounded-b-lg",
-                    "bg-neutral-100 dark:bg-neutral-900",
-                    "!border !border-t-0 !border-neutral-200 dark:!border-neutral-700",
-                    isFocused ? "!border-neutral-300 dark:!border-neutral-600" : "",
-                    isProcessing ? "!opacity-20 !cursor-not-allowed" : ""
-                )}>
-                    <div className={cn(
-                        "flex items-center gap-2",
-                        isMobile && "overflow-hidden"
-                    )}>
-                        <div className={cn(
-                            "transition-all duration-100",
-                            (selectedGroup !== 'extreme')
-                                ? "opacity-100 visible w-auto"
-                                : "opacity-0 invisible w-0"
-                        )}>
+                <div
+                    className={cn(
+                        'absolute bottom-0 inset-x-0 flex justify-between items-center p-2 rounded-b-lg',
+                        'bg-neutral-100 dark:bg-neutral-900',
+                        '!border !border-t-0 !border-neutral-200 dark:!border-neutral-700',
+                        isFocused ? '!border-neutral-300 dark:!border-neutral-600' : '',
+                        isProcessing ? '!opacity-20 !cursor-not-allowed' : '',
+                    )}
+                >
+                    <div className={cn('flex items-center gap-2', isMobile && 'overflow-hidden')}>
+                        <div
+                            className={cn(
+                                'transition-all duration-100',
+                                selectedGroup !== 'extreme' ? 'opacity-100 visible w-auto' : 'opacity-0 invisible w-0',
+                            )}
+                        >
                             <GroupSelector
                                 selectedGroup={selectedGroup}
                                 onGroupSelect={handleGroupSelect}
@@ -1160,10 +1238,14 @@ const FormComponent: React.FC<FormComponentProps> = ({
                             />
                         </div>
 
-                        <div className={cn(
-                            "transition-all duration-300",
-                            (isMobile && isGroupSelectorExpanded) ? "opacity-0 w-0 invisible" : "opacity-100 visible w-auto"
-                        )}>
+                        <div
+                            className={cn(
+                                'transition-all duration-300',
+                                isMobile && isGroupSelectorExpanded
+                                    ? 'opacity-0 w-0 invisible'
+                                    : 'opacity-100 visible w-auto',
+                            )}
+                        >
                             <ModelSwitcher
                                 selectedModel={selectedModel}
                                 setSelectedModel={setSelectedModel}
@@ -1174,24 +1256,26 @@ const FormComponent: React.FC<FormComponentProps> = ({
                             />
                         </div>
 
-                        <div className={cn(
-                            "transition-all duration-300",
-                            (isMobile && isGroupSelectorExpanded)
-                                ? "opacity-0 invisible w-0"
-                                : "opacity-100 visible w-auto"
-                        )}>
+                        <div
+                            className={cn(
+                                'transition-all duration-300',
+                                isMobile && isGroupSelectorExpanded
+                                    ? 'opacity-0 invisible w-0'
+                                    : 'opacity-100 visible w-auto',
+                            )}
+                        >
                             <button
                                 onClick={() => {
                                     setSelectedGroup(selectedGroup === 'extreme' ? 'web' : 'extreme');
                                 }}
                                 className={cn(
-                                    "flex items-center gap-2 p-2 sm:px-3 h-8",
-                                    "rounded-full transition-all duration-300",
-                                    "border border-neutral-200 dark:border-neutral-800",
-                                    "hover:shadow-md",
+                                    'flex items-center gap-2 p-2 sm:px-3 h-8',
+                                    'rounded-full transition-all duration-300',
+                                    'border border-neutral-200 dark:border-neutral-800',
+                                    'hover:shadow-md',
                                     selectedGroup === 'extreme'
-                                        ? "bg-neutral-900 dark:bg-white text-white dark:text-neutral-900"
-                                        : "bg-white dark:bg-neutral-900 text-neutral-500",
+                                        ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900'
+                                        : 'bg-white dark:bg-neutral-900 text-neutral-500',
                                 )}
                             >
                                 <Mountain className="h-3.5 w-3.5" />
@@ -1233,7 +1317,11 @@ const FormComponent: React.FC<FormComponentProps> = ({
                                     event.preventDefault();
                                     submitForm();
                                 }}
-                                disabled={input.length === 0 && attachments.length === 0 || uploadQueue.length > 0 || status !== 'ready'}
+                                disabled={
+                                    (input.length === 0 && attachments.length === 0) ||
+                                    uploadQueue.length > 0 ||
+                                    status !== 'ready'
+                                }
                             >
                                 <ArrowUpIcon size={14} />
                             </Button>
