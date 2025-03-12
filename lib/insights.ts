@@ -1,7 +1,8 @@
 import { microSecondsToMilliSeconds } from '@paulirish/trace_engine/core/platform/Timing';
-import { type InsightModels } from '@paulirish/trace_engine/models/trace/insights/types';
+import { TraceInsightSets, type InsightModels } from '@paulirish/trace_engine/models/trace/insights/types';
 import { type Micro } from '@paulirish/trace_engine/models/trace/types/Timing';
 import { analyzeTrace, TraceAnalysis } from './trace';
+import { UserInteractionsData } from '@paulirish/trace_engine/models/trace/handlers/UserInteractionsHandler';
 
 export const msOrSDisplay: (value: number) => string = (value) => {
     if (value < 1000) {
@@ -28,9 +29,12 @@ export enum TraceTopic {
     Viewport = 'Viewport',
 }
 
-export async function analyzeInsights(analysis: TraceAnalysis, topic: TraceTopic) {
+export async function analyzeInsights(
+    insights: TraceInsightSets,
+    userInteractions: UserInteractionsData,
+    topic: TraceTopic,
+) {
     const microToMs = (micro: number) => micro / 1000;
-    const { insights, parsedTrace: traceEngineData } = analysis;
     const insightsArray = Array.from(insights);
     let resultingString = '';
 
@@ -112,19 +116,16 @@ export async function analyzeInsights(analysis: TraceAnalysis, topic: TraceTopic
                 insight.longestInteractionEvent = longestInteractionEventData;
                 insight.highPercentileInteractionEvent = highPercentileInteractionEventData;
 
-                const { UserInteractions } = traceEngineData;
+                const { longestInteractionEvent: _longestInteractionEvent } = userInteractions;
 
-                const { longestInteractionEvent: _longestInteractionEvent } = UserInteractions;
-
-                console.log({ longestInteractionEvent }, 'Longest Interaction Event');
+                console.log({ longestInteractionEvent }, '########Longest Interaction Event##########');
 
                 if (_longestInteractionEvent) {
                     const interactionDur = microSecondsToMilliSeconds(_longestInteractionEvent.dur);
 
-                    const inputDelay = microSecondsToMilliSeconds(
-                        // @ts-ignore
-                        parseInt(_longestInteractionEvent.inputDelay.replace('ms', '')),
-                    );
+                    console.log({ _longestInteractionEvent }, 'Longest Interaction Event');
+
+                    const inputDelay = microSecondsToMilliSeconds(_longestInteractionEvent.inputDelay);
 
                     const processingStart = microSecondsToMilliSeconds(
                         // @ts-ignore
@@ -136,10 +137,7 @@ export async function analyzeInsights(analysis: TraceAnalysis, topic: TraceTopic
                         _longestInteractionEvent.rawSourceEvent.args.data.processingEnd,
                     );
 
-                    const presentationDelay = microSecondsToMilliSeconds(
-                        // @ts-ignore
-                        parseInt(_longestInteractionEvent.presentationDelay.replace('ms', '')),
-                    );
+                    const presentationDelay = microSecondsToMilliSeconds(_longestInteractionEvent.presentationDelay);
 
                     const processing = processingEnd - processingStart;
 
@@ -208,13 +206,9 @@ export async function analyzeInsights(analysis: TraceAnalysis, topic: TraceTopic
         console.log({ topic }, 'Topic');
 
         if (topic) {
-            resultingString += `Here's the trace insights from the topic: ${topic}\n
-        \`\`\`json\n${JSON.stringify(insights.model[topic].summary, null, 2)}\n\`\`\`
-        `;
+            return insights.model[topic].summary;
         } else {
-            resultingString += `Here's the trace insights from all topics:\n
-        \`\`\`json\n${JSON.stringify(insights, null, 2)}\n\`\`\``;
+            return insights;
         }
-        insightsArray[i] = [navId, insights];
     }
 }

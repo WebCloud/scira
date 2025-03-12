@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { geolocation } from '@vercel/functions';
 import MemoryClient from 'mem0ai';
 import { ollama } from 'ollama-ai-provider';
+import { analyzeInsights, TraceTopic } from '@/lib/insights';
 
 const scira = customProvider({
     languageModels: {
@@ -160,7 +161,7 @@ const deduplicateByDomainAndUrl = <T extends { url: string }>(items: T[]): T[] =
 
 // Modify the POST function to use the new handler
 export async function POST(req: Request) {
-    const { messages, model, group, user_id, insights } = await req.json();
+    const { messages, model, group, user_id, insights, userInteractions } = await req.json();
     console.log('insights on the backend', insights);
     const { tools: activeTools, systemPrompt, toolInstructions, responseGuidelines } = await getGroupConfig(group);
     const geo = geolocation(req);
@@ -634,6 +635,55 @@ export async function POST(req: Request) {
                                     },
                                 });
 
+                                const { object: insightTopic } = await generateObject({
+                                    model: scira.languageModel('scira-default'),
+                                    temperature: 0,
+                                    messages: convertToCoreMessages(messages),
+                                    schema: z.object({
+                                        topic: z.nativeEnum(TraceTopic).describe('Topic of the trace'),
+                                    }),
+                                    system: `You are a web performance analysis expert specializing in Core Web Vitals. Your task is to analyze user queries about web performance issues, classify them into relevant categories.
+Pick a topic from the schema given based on the user's message.
+Use only the list of topics provided in the schema.
+
+Those topics represent different aspects of a performance trace.
+
+Core Web Vitals Context
+Core Web Vitals are Google's metrics for measuring web page experience:
+
+Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
+Interactivity (FID/INP): First Input Delay/Interaction to Next Paint - measures responsiveness (100ms or less is good)
+Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
+
+Additional important metrics include:
+
+TTFB (Time to First Byte)
+FCP (First Contentful Paint)
+TTI (Time to Interactive)
+TBT (Total Blocking Time)
+Resource optimization (JS, CSS, images, fonts)
+Network performance (caching, compression)
+
+Your Process
+
+Analyze the user's query about web performance
+Classify it into relevant web vitals categories
+
+IMPORTANT: Use only the list of topics provided in the schema.`,
+                                });
+
+                                console.log({ insightTopic }, 'insightTopic!!!');
+                                let insightsForTopic;
+                                try {
+                                    insightsForTopic = await analyzeInsights(
+                                        insights,
+                                        userInteractions,
+                                        insightTopic.topic,
+                                    );
+                                } catch (error) {
+                                    console.error('Error analyzing insights:', error);
+                                }
+
                                 // Now generate the research plan
                                 const { object: researchPlan } = await generateObject({
                                     model: scira.languageModel('scira-default'),
@@ -644,7 +694,7 @@ export async function POST(req: Request) {
                                                 z.object({
                                                     query: z.string(),
                                                     rationale: z.string(),
-                                                    source: z.enum(['web', 'academic', 'x', 'all']),
+                                                    source: z.enum(['web', 'all']),
                                                     priority: z.number().min(1).max(5),
                                                 }),
                                             )
@@ -669,22 +719,37 @@ export async function POST(req: Request) {
                                         })}
                                 
                                         Keep the plan concise but comprehensive, with:
-                                        - 4-12 targeted search queries (each can use web, academic, x (Twitter), or all sources)
-                                        - 2-8 key analyses to perform
+                                        - 4-8 targeted search queries (each can use web as source. Focus on web.dev as main source whenever possible)
+                                        - 2-4 key analyses to perform
                                         - Prioritize the most important aspects to investigate
                                         
                                         Available sources:
                                         - "web": General web search
-                                        - "academic": Academic papers and research
-                                        - "x": X/Twitter posts and discussions
-                                        - "all": Use all source types (web, academic, and X/Twitter)
                                         
                                         Do not use floating numbers, use whole numbers only in the priority field!!
                                         Do not keep the numbers too low or high, make them reasonable in between.
                                         Do not use 0 or 1 in the priority field, use numbers between 2 and 4.
                                         
-                                        Consider different angles and potential controversies, but maintain focus on the core aspects.
-                                        Ensure the total number of steps (searches + analyses) does not exceed 20.`,
+                                        Consider related topics, but maintain focus on the core aspects.
+                                        Here's the list of topics represent different aspects of a performance trace.
+
+Core Web Vitals Context
+Core Web Vitals are Google's metrics for measuring web page experience:
+
+Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
+Interactivity (FID/INP): First Input Delay/Interaction to Next Paint - measures responsiveness (100ms or less is good)
+Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
+
+Additional important metrics include:
+
+TTFB (Time to First Byte)
+FCP (First Contentful Paint)
+TTI (Time to Interactive)
+TBT (Total Blocking Time)
+Resource optimization (JS, CSS, images, fonts)
+Network performance (caching, compression)
+
+                                        Ensure the total number of steps (searches + analyses) does not exceed 10.`,
                                 });
 
                                 // Generate IDs for all steps based on the plan
@@ -692,16 +757,9 @@ export async function POST(req: Request) {
                                     // Generate an array of search steps.
                                     const searchSteps = plan.search_queries.flatMap((query, index) => {
                                         if (query.source === 'all') {
-                                            return [
-                                                { id: `search-web-${index}`, type: 'web', query },
-                                                { id: `search-academic-${index}`, type: 'academic', query },
-                                                { id: `search-x-${index}`, type: 'x', query },
-                                            ];
+                                            return [{ id: `search-web-${index}`, type: 'web', query }];
                                         }
-                                        if (query.source === 'x') {
-                                            return [{ id: `search-x-${index}`, type: 'x', query }];
-                                        }
-                                        const searchType = query.source === 'academic' ? 'academic' : 'web';
+                                        const searchType = 'web';
                                         return [{ id: `search-${searchType}-${index}`, type: searchType, query }];
                                     });
 
@@ -751,14 +809,7 @@ export async function POST(req: Request) {
                                             id: step.id,
                                             type: step.type,
                                             status: 'running',
-                                            title:
-                                                step.type === 'web'
-                                                    ? `Searching the web for "${step.query.query}"`
-                                                    : step.type === 'academic'
-                                                    ? `Searching academic papers for "${step.query.query}"`
-                                                    : step.type === 'x'
-                                                    ? `Searching X/Twitter for "${step.query.query}"`
-                                                    : `Analyzing ${step.query.query}`,
+                                            title: `Searching the web for "${step.query.query}"`,
                                             query: step.query.query,
                                             message: `Searching ${step.query.source} sources...`,
                                             timestamp: Date.now(),
@@ -769,6 +820,13 @@ export async function POST(req: Request) {
                                         const webResults = await tvly.search(step.query.query, {
                                             searchDepth: depth,
                                             includeAnswer: true,
+                                            includeDomains: [
+                                                'https://web.dev',
+                                                'https://www.chromium.org/',
+                                                'https://developer.chrome.com',
+                                                'https://developer.mozilla.org',
+                                                'https://dev.to',
+                                            ],
                                             maxResults: Math.min(6 - step.query.priority, 10),
                                         });
 
@@ -850,7 +908,8 @@ export async function POST(req: Request) {
                                             step.analysis.description
                                         }
                                             Consider all sources and their reliability.
-                                            Search results: ${JSON.stringify(searchResults)}`,
+                                            Search results: ${JSON.stringify(searchResults)}
+                                            IMPORTANT: ENSURE TO RETURN CONFIDENCE SCORES BETWEEN 0 AND 1.`,
                                     });
 
                                     dataStream.writeMessageAnnotation({
@@ -915,20 +974,35 @@ export async function POST(req: Request) {
                                     }),
                                     prompt: `Analyze the research results and identify limitations, knowledge gaps, and recommended follow-up actions.
                                         Consider:
-                                        - Quality and reliability of sources
-                                        - Missing perspectives or data
-                                        - Areas needing deeper investigation
-                                        - Potential biases or conflicts
+                                        - Quality and reliability of sources (prefer web.dev as main source whenever possible)
+                                        - Missing alignment to main topic or data
+                                        - Areas needing deeper investigation (focus on web performance and web vitals always)
                                         - Severity should be between 2 and 10
                                         - Knowledge gaps should be between 2 and 10
                                         - Do not keep the numbers too low or high, make them reasonable in between
                                         
                                         When suggesting additional_queries for knowledge gaps, keep in mind these will be used to search:
-                                        - Web sources
-                                        - Academic papers
-                                        - X/Twitter for social media perspectives and real-time information
+                                        - Web sources (prefer web.dev as main source whenever possible)
                                         
                                         Design your additional_queries to work well across these different source types.
+
+                                        Here's the list of topics represent different aspects of a performance trace.
+
+                                        Core Web Vitals Context
+                                        Core Web Vitals are Google's metrics for measuring web page experience:
+
+                                        Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
+                                        Interactivity (FID/INP): First Input Delay/Interaction to Next Paint - measures responsiveness (100ms or less is good)
+                                        Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
+
+                                        Additional important metrics include:
+
+                                        TTFB (Time to First Byte)
+                                        FCP (First Contentful Paint)
+                                        TTI (Time to Interactive)
+                                        TBT (Total Blocking Time)
+                                        Resource optimization (JS, CSS, images, fonts)
+                                        Network performance (caching, compression)
                                         
                                         Research results: ${JSON.stringify(searchResults)}
                                         Analysis findings: ${JSON.stringify(
@@ -1007,6 +1081,13 @@ export async function POST(req: Request) {
                                                 searchDepth: depth,
                                                 includeAnswer: true,
                                                 maxResults: 5,
+                                                includeDomains: [
+                                                    'https://www.chromium.org/',
+                                                    'https://web.dev',
+                                                    'https://developer.chrome.com',
+                                                    'https://developer.mozilla.org',
+                                                    'https://dev.to',
+                                                ],
                                             });
 
                                             // Add to search results
@@ -1245,7 +1326,8 @@ export async function POST(req: Request) {
                                             
                                             Original results: ${JSON.stringify(searchResults)}
                                             Gap analysis: ${JSON.stringify(gapAnalysis)}
-                                            Additional findings: ${JSON.stringify(additionalQueries)}`,
+                                            Additional findings: ${JSON.stringify(additionalQueries)}
+                                            IMPORTANT: ENSURE TO RETURN CONFIDENCE SCORES BETWEEN 0 AND 1.`,
                                     });
 
                                     synthesis = finalSynthesis;
@@ -1294,10 +1376,17 @@ export async function POST(req: Request) {
                                     },
                                 });
 
+                                dataStream.writeData({
+                                    insightTopic,
+                                    insightsForTopic,
+                                });
+
                                 return {
                                     plan: researchPlan,
                                     results: searchResults,
                                     synthesis: synthesis,
+                                    insightTopic,
+                                    insightsForTopic,
                                 };
                             },
                         }),

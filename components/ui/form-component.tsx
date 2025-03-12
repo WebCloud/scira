@@ -1032,6 +1032,7 @@ const FormComponent: React.FC<FormComponentProps> = ({
                     experimental_attachments: attachments,
                     body: {
                         insights: Array.from(traceAnalysis?.insights ?? []),
+                        userInteractions: traceAnalysis?.parsedTrace.UserInteractions,
                     },
                 });
 
