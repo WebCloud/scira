@@ -1,5 +1,5 @@
 import { microSecondsToMilliSeconds } from '@paulirish/trace_engine/core/platform/Timing';
-import { TraceInsightSets, type InsightModels } from '@paulirish/trace_engine/models/trace/insights/types';
+import { InsightSet, TraceInsightSets, type InsightModels } from '@paulirish/trace_engine/models/trace/insights/types';
 import { type Micro } from '@paulirish/trace_engine/models/trace/types/Timing';
 import { analyzeTrace, TraceAnalysis } from './trace';
 import { UserInteractionsData } from '@paulirish/trace_engine/models/trace/handlers/UserInteractionsHandler';
@@ -30,12 +30,12 @@ export enum TraceTopic {
 }
 
 export async function analyzeInsights(
-    insights: TraceInsightSets,
+    insights: [string, InsightSet][],
     userInteractions: UserInteractionsData,
     topic: TraceTopic,
 ) {
     const microToMs = (micro: number) => micro / 1000;
-    const insightsArray = Array.from(insights);
+    const insightsArray = insights;
     let resultingString = '';
 
     // Redact info to minimize context window and embedding size

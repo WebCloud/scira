@@ -17,7 +17,6 @@ import {
     generateObject,
     NoSuchToolError,
 } from 'ai';
-import Exa from 'exa-js';
 import { z } from 'zod';
 import { geolocation } from '@vercel/functions';
 import MemoryClient from 'mem0ai';
@@ -163,13 +162,13 @@ const deduplicateByDomainAndUrl = <T extends { url: string }>(items: T[]): T[] =
 export async function POST(req: Request) {
     const { messages, model, group, user_id, insights, userInteractions } = await req.json();
     console.log('insights on the backend', insights);
-    const { tools: activeTools, systemPrompt, toolInstructions, responseGuidelines } = await getGroupConfig(group);
+    const { tools: activeTools, systemPrompt, toolInstructions, responseGuidelines } = await getGroupConfig('extreme');
     const geo = geolocation(req);
 
     console.log('Running with model: ', model.trim());
     console.log('Group: ', group);
 
-    if (group !== 'chat' && group !== 'buddy') {
+    if (true) {
         console.log('Running inside part 1');
         return createDataStreamResponse({
             execute: async (dataStream) => {
@@ -619,7 +618,6 @@ export async function POST(req: Request) {
                             execute: async ({ topic, depth }: { topic: string; depth: 'basic' | 'advanced' }) => {
                                 const apiKey = serverEnv.TAVILY_API_KEY;
                                 const tvly = tavily({ apiKey });
-                                const exa = new Exa(serverEnv.EXA_API_KEY as string);
 
                                 // Send initial plan status update (without steps count and extra details)
                                 dataStream.writeMessageAnnotation({
@@ -634,55 +632,6 @@ export async function POST(req: Request) {
                                         overwrite: true,
                                     },
                                 });
-
-                                const { object: insightTopic } = await generateObject({
-                                    model: scira.languageModel('scira-default'),
-                                    temperature: 0,
-                                    messages: convertToCoreMessages(messages),
-                                    schema: z.object({
-                                        topic: z.nativeEnum(TraceTopic).describe('Topic of the trace'),
-                                    }),
-                                    system: `You are a web performance analysis expert specializing in Core Web Vitals. Your task is to analyze user queries about web performance issues, classify them into relevant categories.
-Pick a topic from the schema given based on the user's message.
-Use only the list of topics provided in the schema.
-
-Those topics represent different aspects of a performance trace.
-
-Core Web Vitals Context
-Core Web Vitals are Google's metrics for measuring web page experience:
-
-Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
-Interactivity (FID/INP): First Input Delay/Interaction to Next Paint - measures responsiveness (100ms or less is good)
-Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
-
-Additional important metrics include:
-
-TTFB (Time to First Byte)
-FCP (First Contentful Paint)
-TTI (Time to Interactive)
-TBT (Total Blocking Time)
-Resource optimization (JS, CSS, images, fonts)
-Network performance (caching, compression)
-
-Your Process
-
-Analyze the user's query about web performance
-Classify it into relevant web vitals categories
-
-IMPORTANT: Use only the list of topics provided in the schema.`,
-                                });
-
-                                console.log({ insightTopic }, 'insightTopic!!!');
-                                let insightsForTopic;
-                                try {
-                                    insightsForTopic = await analyzeInsights(
-                                        insights,
-                                        userInteractions,
-                                        insightTopic.topic,
-                                    );
-                                } catch (error) {
-                                    console.error('Error analyzing insights:', error);
-                                }
 
                                 // Now generate the research plan
                                 const { object: researchPlan } = await generateObject({
@@ -737,7 +686,7 @@ Core Web Vitals Context
 Core Web Vitals are Google's metrics for measuring web page experience:
 
 Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
-Interactivity (FID/INP): First Input Delay/Interaction to Next Paint - measures responsiveness (100ms or less is good)
+Interactivity (INP): Interaction to Next Paint - measures responsiveness (100ms or less is good)
 Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
 
 Additional important metrics include:
@@ -992,7 +941,7 @@ Network performance (caching, compression)
                                         Core Web Vitals are Google's metrics for measuring web page experience:
 
                                         Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
-                                        Interactivity (FID/INP): First Input Delay/Interaction to Next Paint - measures responsiveness (100ms or less is good)
+                                        Interactivity (INP): Interaction to Next Paint - measures responsiveness (100ms or less is good)
                                         Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
 
                                         Additional important metrics include:
@@ -1131,165 +1080,6 @@ Network performance (caching, compression)
                                                 },
                                             });
                                         }
-
-                                        if (query.source === 'academic' || query.source === 'all') {
-                                            const academicSearchId =
-                                                query.source === 'all'
-                                                    ? `gap-search-academic-${searchIndex++}`
-                                                    : gapSearchId;
-
-                                            // Send running annotation for academic search if it's for 'all' source
-                                            if (query.source === 'all') {
-                                                dataStream.writeMessageAnnotation({
-                                                    type: 'research_update',
-                                                    data: {
-                                                        id: academicSearchId,
-                                                        type: 'academic',
-                                                        status: 'running',
-                                                        title: `Additional academic search for "${query.query}"`,
-                                                        query: query.query,
-                                                        message: `Searching academic sources to fill knowledge gap: ${query.rationale}`,
-                                                        timestamp: Date.now(),
-                                                    },
-                                                });
-                                            }
-
-                                            // Execute academic search
-                                            const academicResults = await exa.searchAndContents(query.query, {
-                                                type: 'auto',
-                                                numResults: 3,
-                                                category: 'research paper',
-                                                summary: true,
-                                            });
-
-                                            // Add to search results
-                                            searchResults.push({
-                                                type: 'academic',
-                                                query: {
-                                                    query: query.query,
-                                                    rationale: query.rationale,
-                                                    source: 'academic',
-                                                    priority: query.priority,
-                                                },
-                                                results: academicResults.results.map((r) => ({
-                                                    source: 'academic',
-                                                    title: r.title || '',
-                                                    url: r.url || '',
-                                                    content: r.summary || '',
-                                                })),
-                                            });
-
-                                            // Send completed annotation for academic search
-                                            dataStream.writeMessageAnnotation({
-                                                type: 'research_update',
-                                                data: {
-                                                    id: academicSearchId,
-                                                    type: 'academic',
-                                                    status: 'completed',
-                                                    title: `Additional academic search for "${query.query}"`,
-                                                    query: query.query,
-                                                    results: academicResults.results.map((r) => ({
-                                                        source: 'academic',
-                                                        title: r.title || '',
-                                                        url: r.url || '',
-                                                        content: r.summary || '',
-                                                    })),
-                                                    message: `Found ${academicResults.results.length} results`,
-                                                    timestamp: Date.now(),
-                                                    overwrite: query.source === 'all' ? true : false,
-                                                },
-                                            });
-                                        }
-
-                                        if (query.source === 'x' || query.source === 'all') {
-                                            const xSearchId =
-                                                query.source === 'all' ? `gap-search-x-${searchIndex++}` : gapSearchId;
-
-                                            // Send running annotation for X search if it's for 'all' source
-                                            if (query.source === 'all') {
-                                                dataStream.writeMessageAnnotation({
-                                                    type: 'research_update',
-                                                    data: {
-                                                        id: xSearchId,
-                                                        type: 'x',
-                                                        status: 'running',
-                                                        title: `Additional X/Twitter search for "${query.query}"`,
-                                                        query: query.query,
-                                                        message: `Searching X/Twitter to fill knowledge gap: ${query.rationale}`,
-                                                        timestamp: Date.now(),
-                                                    },
-                                                });
-                                            }
-
-                                            // Extract tweet ID from URL
-                                            const extractTweetId = (url: string): string | null => {
-                                                const match = url.match(/(?:twitter\.com|x\.com)\/\w+\/status\/(\d+)/);
-                                                return match ? match[1] : null;
-                                            };
-
-                                            // Execute X/Twitter search
-                                            const xResults = await exa.searchAndContents(query.query, {
-                                                type: 'keyword',
-                                                numResults: 5,
-                                                text: true,
-                                                highlights: true,
-                                                includeDomains: ['twitter.com', 'x.com'],
-                                            });
-
-                                            // Process tweets to include tweet IDs - properly handling undefined
-                                            const processedTweets = xResults.results
-                                                .map((result) => {
-                                                    const tweetId = extractTweetId(result.url);
-                                                    if (!tweetId) return null; // Skip entries without valid tweet IDs
-
-                                                    return {
-                                                        source: 'x' as const,
-                                                        title: result.title || result.author || 'Tweet',
-                                                        url: result.url,
-                                                        content: result.text || '',
-                                                        tweetId, // Now it's definitely string, not undefined
-                                                    };
-                                                })
-                                                .filter(
-                                                    (
-                                                        tweet,
-                                                    ): tweet is {
-                                                        source: 'x';
-                                                        title: string;
-                                                        url: string;
-                                                        content: string;
-                                                        tweetId: string;
-                                                    } => tweet !== null,
-                                                );
-
-                                            // Add to search results
-                                            searchResults.push({
-                                                type: 'x',
-                                                query: {
-                                                    query: query.query,
-                                                    rationale: query.rationale,
-                                                    source: 'x',
-                                                    priority: query.priority,
-                                                },
-                                                results: processedTweets,
-                                            });
-
-                                            // Send completed annotation for X search
-                                            dataStream.writeMessageAnnotation({
-                                                type: 'research_update',
-                                                data: {
-                                                    id: xSearchId,
-                                                    type: 'x',
-                                                    status: 'completed',
-                                                    title: `Additional X/Twitter search for "${query.query}"`,
-                                                    query: query.query,
-                                                    results: processedTweets,
-                                                    message: `Found ${processedTweets.length} results`,
-                                                    timestamp: Date.now(),
-                                                    overwrite: query.source === 'all' ? true : false,
-                                                },
-                                            });
-                                        }
                                     }
 
                                     // Send running state for final synthesis
@@ -1376,17 +1166,10 @@ Network performance (caching, compression)
                                     },
                                 });
 
-                                dataStream.writeData({
-                                    insightTopic,
-                                    insightsForTopic,
-                                });
-
                                 return {
                                     plan: researchPlan,
                                     results: searchResults,
                                     synthesis: synthesis,
-                                    insightTopic,
-                                    insightsForTopic,
                                 };
                             },
                         }),
@@ -1457,6 +1240,99 @@ Network performance (caching, compression)
 
                 console.log('we got here');
 
+                const { object: insightTopic } = await generateObject({
+                    model: scira.languageModel('scira-default'),
+                    temperature: 0,
+                    messages: convertToCoreMessages(messages),
+                    schema: z.object({
+                        topic: z.nativeEnum(TraceTopic).describe('Topic of the trace'),
+                    }),
+                    system: `You are a web performance analysis expert specializing in Core Web Vitals. Your task is to analyze user queries about web performance issues, classify them into relevant categories.
+Pick a topic from the schema given based on the user's message.
+Use only the list of topics provided in the schema.
+
+Those topics represent different aspects of a performance trace.
+
+Core Web Vitals Context
+Core Web Vitals are Google's metrics for measuring web page experience:
+
+Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
+Interactivity (INP): Interaction to Next Paint - measures responsiveness (100ms or less is good)
+Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
+
+Additional important metrics include:
+
+TTFB (Time to First Byte)
+FCP (First Contentful Paint)
+TTI (Time to Interactive)
+TBT (Total Blocking Time)
+Resource optimization (JS, CSS, images, fonts)
+Network performance (caching, compression)
+
+Your Process
+
+Analyze the user's query about web performance
+Classify it into relevant web vitals categories
+
+IMPORTANT: Use only the list of topics provided in the schema.`,
+                });
+
+                console.log({ insightTopic }, 'insightTopic!!!');
+                let insightsForTopic;
+                try {
+                    insightsForTopic = await analyzeInsights(insights, userInteractions, insightTopic.topic);
+                } catch (error) {
+                    console.error('Error analyzing insights:', error);
+                }
+
+                const systemTemplate = `
+You are Perf Agent, a report editor specializing in performance reports and core web vitals insights analysis. Your task is to produce a report based on the performance trace analysis and insights data.
+
+## Core Web Vitals Context
+
+Core Web Vitals are Google's metrics for measuring web page experience:
+- **Loading (LCP)**: Largest Contentful Paint - measures loading performance
+- **Interactivity (INP)**: Interaction to Next Paint - measures responsiveness
+- **Visual Stability (CLS)**: Cumulative Layout Shift - measures visual stability
+
+Additional important metrics include:
+- TTFB - Time to First Byte - also related to the loading time
+- FCP - First Contentful Paint - also related to the loading time
+- TBT - Total Blocking Time - related to blocking resources and the main thread
+
+## Your Process
+- Analyze the trace insights and produce a report following the template below
+- Introduce a section to breakdown some of the key insights data
+- USE THE INSIGHTS FOR TOPIC TO WRITE THE REPORT SECTION ON THE TRACE ANALYSIS
+- Example trace analysis bellow:
+  
+# <topic> report based on trace analysis
+
+## Actionable Optimizations
+** Your <topic> value is <metricValue from insights data> and your score is <metricScore from insights data> **
+
+### <topic from insights data>
+* <sub-topic from insights data>: your longest interaction event in the trace is about 100ms
+
+Here's the trace analysis (DO NOT INCLUDE THIS DATA IN THE RESPONSE. USE IT TO WRITE THE REPORT SECTION ON THE TRACE ANALYSIS):
+\`\`\`json
+${JSON.stringify(insightsForTopic, null, 2)}
+\`\`\`
+
+FOLLOW THE REPORT STRUCTURE TO RESPOND.
+`;
+
+                const traceReportStream = streamText({
+                    model: scira.languageModel('scira-default'),
+                    temperature: 0,
+                    messages: convertToCoreMessages(messages),
+                    system: systemTemplate,
+                });
+
+                traceReportStream.mergeIntoDataStream(dataStream, {
+                    experimental_sendStart: true,
+                });
+
                 const response = streamText({
                     model: scira.languageModel(model),
                     system: responseGuidelines,
@@ -1466,6 +1342,7 @@ Network performance (caching, compression)
                     }),
                     messages: [...convertToCoreMessages(messages), ...(await toolsResult.response).messages],
                     onFinish(event) {
+                        console.log('###########onFinish###########');
                         console.log('Fin reason[2]: ', event.finishReason);
                         console.log('Reasoning[2]: ', event.reasoning);
                         console.log('reasoning details[2]: ', event.reasoningDetails);
@@ -1478,188 +1355,10 @@ Network performance (caching, compression)
                 });
 
                 return response.mergeIntoDataStream(dataStream, {
-                    experimental_sendStart: true,
+                    experimental_sendFinish: true,
                 });
             },
         });
     } else {
-        console.log('Running inside part 2');
-        return createDataStreamResponse({
-            execute: async (dataStream) => {
-                const result = streamText({
-                    model: scira.languageModel(model),
-                    maxSteps: 5,
-                    providerOptions: {
-                        groq: {
-                            reasoning_format: group === 'chat' ? 'raw' : 'parsed',
-                        },
-                        anthropic: {
-                            thinking: {
-                                type: group === 'chat' ? 'enabled' : 'disabled',
-                                budgetTokens: 12000,
-                            },
-                        },
-                    },
-                    messages: convertToCoreMessages(messages),
-                    temperature: 0,
-                    experimental_transform: smoothStream({
-                        chunking: 'word',
-                        delayInMs: 15,
-                    }),
-                    experimental_activeTools: group === 'chat' ? [] : ['memory_manager'],
-                    system: systemPrompt,
-                    tools: {
-                        memory_manager: tool({
-                            description: 'Manage personal memories with add and search operations.',
-                            parameters: z.object({
-                                action: z.enum(['add', 'search']).describe('The memory operation to perform'),
-                                content: z.string().optional().describe('The memory content for add operation'),
-                                query: z.string().optional().describe('The search query for search operations'),
-                            }),
-                            execute: async ({
-                                action,
-                                content,
-                                query,
-                            }: {
-                                action: 'add' | 'search';
-                                content?: string;
-                                query?: string;
-                            }) => {
-                                const client = new MemoryClient({ apiKey: serverEnv.MEM0_API_KEY });
-
-                                console.log('action', action);
-                                console.log('content', content);
-                                console.log('query', query);
-
-                                try {
-                                    switch (action) {
-                                        case 'add': {
-                                            if (!content) {
-                                                return {
-                                                    success: false,
-                                                    action: 'add',
-                                                    message: 'Content is required for add operation',
-                                                };
-                                            }
-                                            const result = await client.add(content, {
-                                                user_id,
-                                                org_name: serverEnv.MEM0_ORG_NAME,
-                                                project_name: serverEnv.MEM0_PROJECT_NAME,
-                                            });
-                                            if (result.length === 0) {
-                                                return {
-                                                    success: false,
-                                                    action: 'add',
-                                                    message: 'No memory added',
-                                                };
-                                            }
-                                            console.log('result', result);
-                                            return {
-                                                success: true,
-                                                action: 'add',
-                                                memory: result[0],
-                                            };
-                                        }
-                                        case 'search': {
-                                            if (!query) {
-                                                return {
-                                                    success: false,
-                                                    action: 'search',
-                                                    message: 'Query is required for search operation',
-                                                };
-                                            }
-                                            const searchFilters = {
-                                                AND: [{ user_id }],
-                                            };
-                                            const result = await client.search(query, {
-                                                filters: searchFilters,
-                                                api_version: 'v2',
-                                            });
-                                            if (!result || !result[0]) {
-                                                return {
-                                                    success: false,
-                                                    action: 'search',
-                                                    message: 'No results found for the search query',
-                                                };
-                                            }
-                                            return {
-                                                success: true,
-                                                action: 'search',
-                                                results: result[0],
-                                            };
-                                        }
-                                    }
-                                } catch (error) {
-                                    console.error('Memory operation error:', error);
-                                    throw error;
-                                }
-                            },
-                        }),
-                    },
-                    experimental_repairToolCall: async ({ toolCall, tools, parameterSchema, error }) => {
-                        if (NoSuchToolError.isInstance(error)) {
-                            return null; // do not attempt to fix invalid tool names
-                        }
-
-                        console.log('Fixing tool call================================');
-                        console.log('toolCall', toolCall);
-                        console.log('tools', tools);
-                        console.log('parameterSchema', parameterSchema);
-                        console.log('error', error);
-
-                        const tool = tools[toolCall.toolName as keyof typeof tools];
-
-                        const { object: repairedArgs } = await generateObject({
-                            model: scira.languageModel('scira-default'),
-                            schema: tool.parameters,
-                            prompt: [
-                                `The model tried to call the tool "${toolCall.toolName}"` +
-                                    ` with the following arguments:`,
-                                JSON.stringify(toolCall.args),
-                                `The tool accepts the following schema:`,
-                                JSON.stringify(parameterSchema(toolCall)),
-                                'Please fix the arguments.',
-                                'Do not use print statements stock chart tool.',
-                                `For the stock chart tool you have to generate a python code with matplotlib and yfinance to plot the stock chart.`,
-                                `For the web search make multiple queries to get the best results.`,
-                                `Today's date is ${new Date().toLocaleDateString('en-US', {
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric',
-                                })}`,
-                            ].join('\n'),
-                        });
-
-                        console.log('repairedArgs', repairedArgs);
-
-                        return { ...toolCall, args: JSON.stringify(repairedArgs) };
-                    },
-                    onChunk(event) {
-                        if (event.chunk.type === 'tool-call') {
-                            console.log('Called Tool: ', event.chunk.toolName);
-                        }
-                    },
-                    onStepFinish(event) {
-                        if (event.warnings) {
-                            console.log('Warnings: ', event.warnings);
-                        }
-                    },
-                    onFinish(event) {
-                        console.log('Fin reason: ', event.finishReason);
-                        console.log('Reasoning: ', event.reasoning);
-                        console.log('reasoning details: ', event.reasoningDetails);
-                        console.log('Steps ', event.steps);
-                        console.log('Messages: ', event.response.messages);
-                    },
-                    onError(event) {
-                        console.log('Error: ', event.error);
-                    },
-                });
-
-                result.mergeIntoDataStream(dataStream, {
-                    sendReasoning: true,
-                });
-            },
-        });
     }
 }

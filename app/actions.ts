@@ -210,7 +210,7 @@ const groupToolInstructions = {
   Core Web Vitals are Google's metrics for measuring web page experience:
 
   - Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
-  - Interactivity (FID/INP): First Input Delay/Interaction to Next Paint - measures responsiveness (100ms or less is good)
+  - Interactivity (INP): Interaction to Next Paint - measures responsiveness (100ms or less is good)
   - Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
 
   Additional important metrics include:
@@ -276,11 +276,6 @@ const groupResponseGuidelines = {
      - Cite the most relevant results that answer the question.
      - Citation format: [Source Title](URL)
      - Avoid citing irrelevant results
-
-  3. **IMPORTANT: Latex and Currency Formatting:**
-     - Always use '$' for inline equations and '$$' for block equations.
-     - Avoid using '$' for dollar currency. Use "USD" instead.
-     - No need to use bold or italic formatting in tables.
 
   ### Citations Rules:
   - Place citations directly after relevant sentences or paragraphs. Do not put them in the answer's footer!
@@ -400,24 +395,10 @@ const groupResponseGuidelines = {
   - Make the response as long as possible, do not skip any important details
   
   Response Format:
-  - The response start with a introduction and then do sections and finally a conclusion
-  - It is very important to have citations to the facts you are providing in the response.
-  - Present findings in a logical flow
-  - Support claims with multiple sources
+  - It is very important to have citations from the sources provided
   - Each section should have 2-3 detailed paragraphs
   - CITATIONS SHOULD BE ON EVERYTHING YOU SAY
-  - In the response avoid referencing the citation directly, make it a citation in the statement
-  - Introduce a section to breakdown some of the key insights data
-  - USE THE INSIGHTS FOR TOPIC TO WRITE THE REPORT SECTION ON THE TRACE ANALYSIS
-  - Example trace analysis bellow:
-  
-# <topic> report based on trace analysis
-
-## Actionable Optimizations
-Your <topic> score is <score from insights>
-
-### <topic from insights data>
-* <sub-topic from insights data>: your longest interaction event in the trace is about 100ms `,
+  - In the response avoid referencing the citation directly, make it a citation in the statement`,
 } as const;
 
 const groupPrompts = {
@@ -429,12 +410,12 @@ const groupPrompts = {
     extreme: `${groupResponseGuidelines.extreme}\n\n${groupToolInstructions.extreme}`,
 } as const;
 
-export async function getGroupConfig(groupId: SearchGroupId = 'web') {
+export async function getGroupConfig(groupId: SearchGroupId = 'extreme') {
     'use server';
-    const tools = groupTools[groupId];
-    const systemPrompt = groupPrompts[groupId];
-    const toolInstructions = groupToolInstructions[groupId];
-    const responseGuidelines = groupResponseGuidelines[groupId];
+    const tools = groupTools['extreme'];
+    const systemPrompt = groupPrompts['extreme'];
+    const toolInstructions = groupToolInstructions['extreme'];
+    const responseGuidelines = groupResponseGuidelines['extreme'];
 
     return {
         tools,
