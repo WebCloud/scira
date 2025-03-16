@@ -1134,7 +1134,7 @@ const FormComponent: React.FC<FormComponentProps> = ({
                 ref={fileInputRef}
                 multiple
                 onChange={handleFileChange}
-                accept="image/*"
+                accept="application/json, image/*"
                 tabIndex={-1}
             />
             <input
@@ -1143,7 +1143,7 @@ const FormComponent: React.FC<FormComponentProps> = ({
                 ref={postSubmitFileInputRef}
                 multiple
                 onChange={handleFileChange}
-                accept="image/*"
+                accept="application/json, image/*"
                 tabIndex={-1}
             />
 
@@ -1217,88 +1217,25 @@ const FormComponent: React.FC<FormComponentProps> = ({
 
                 <div
                     className={cn(
-                        'absolute bottom-0 inset-x-0 flex justify-between items-center p-2 rounded-b-lg',
+                        'absolute bottom-0 inset-x-0 flex justify-end items-center p-2 rounded-b-lg',
                         'bg-neutral-100 dark:bg-neutral-900',
                         '!border !border-t-0 !border-neutral-200 dark:!border-neutral-700',
                         isFocused ? '!border-neutral-300 dark:!border-neutral-600' : '',
                         isProcessing ? '!opacity-20 !cursor-not-allowed' : '',
                     )}
                 >
-                    <div className={cn('flex items-center gap-2', isMobile && 'overflow-hidden')}>
-                        <div
-                            className={cn(
-                                'transition-all duration-100',
-                                selectedGroup !== 'extreme' ? 'opacity-100 visible w-auto' : 'opacity-0 invisible w-0',
-                            )}
+                    <div className="flex items-center gap-2 self-end">
+                        <Button
+                            className="rounded-full p-1.5 h-8 w-8 bg-white dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-600"
+                            onClick={(event) => {
+                                event.preventDefault();
+                                triggerFileInput();
+                            }}
+                            variant="outline"
+                            disabled={isProcessing}
                         >
-                            <GroupSelector
-                                selectedGroup={selectedGroup}
-                                onGroupSelect={handleGroupSelect}
-                                status={status}
-                                onExpandChange={setIsGroupSelectorExpanded}
-                            />
-                        </div>
-
-                        <div
-                            className={cn(
-                                'transition-all duration-300',
-                                isMobile && isGroupSelectorExpanded
-                                    ? 'opacity-0 w-0 invisible'
-                                    : 'opacity-100 visible w-auto',
-                            )}
-                        >
-                            <ModelSwitcher
-                                selectedModel={selectedModel}
-                                setSelectedModel={setSelectedModel}
-                                showExperimentalModels={showExperimentalModels}
-                                attachments={attachments}
-                                messages={messages}
-                                status={status}
-                            />
-                        </div>
-
-                        <div
-                            className={cn(
-                                'transition-all duration-300',
-                                isMobile && isGroupSelectorExpanded
-                                    ? 'opacity-0 invisible w-0'
-                                    : 'opacity-100 visible w-auto',
-                            )}
-                        >
-                            <button
-                                onClick={() => {
-                                    setSelectedGroup(selectedGroup === 'extreme' ? 'web' : 'extreme');
-                                }}
-                                className={cn(
-                                    'flex items-center gap-2 p-2 sm:px-3 h-8',
-                                    'rounded-full transition-all duration-300',
-                                    'border border-neutral-200 dark:border-neutral-800',
-                                    'hover:shadow-md',
-                                    selectedGroup === 'extreme'
-                                        ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900'
-                                        : 'bg-white dark:bg-neutral-900 text-neutral-500',
-                                )}
-                            >
-                                <Mountain className="h-3.5 w-3.5" />
-                                <span className="hidden sm:block text-xs font-medium">Extreme</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                        {hasVisionSupport(selectedModel) && !(isMobile && isGroupSelectorExpanded) && (
-                            <Button
-                                className="rounded-full p-1.5 h-8 w-8 bg-white dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-300 dark:hover:bg-neutral-600"
-                                onClick={(event) => {
-                                    event.preventDefault();
-                                    triggerFileInput();
-                                }}
-                                variant="outline"
-                                disabled={isProcessing}
-                            >
-                                <PaperclipIcon size={14} />
-                            </Button>
-                        )}
+                            <PaperclipIcon size={14} />
+                        </Button>
 
                         {isProcessing ? (
                             <Button
