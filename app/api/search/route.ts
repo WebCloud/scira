@@ -1282,6 +1282,44 @@ IMPORTANT: Use only the list of topics provided in the schema.`,
                     console.error('Error analyzing insights:', error);
                 }
 
+                // Add this before traceReportStream
+                if (insightsForTopic) {
+                    // Send running state for insights analysis
+                    dataStream.writeMessageAnnotation({
+                        type: 'research_update',
+                        data: {
+                            id: 'trace-insights',
+                            type: 'trace-insight',
+                            status: 'running',
+                            title: 'Performance Insights Analysis',
+                            message: 'Analyzing performance insights...',
+                            timestamp: Date.now(),
+                        },
+                    });
+
+                    // Send completed state with insights data
+                    dataStream.writeMessageAnnotation({
+                        type: 'research_update',
+                        data: {
+                            id: 'trace-insights',
+                            type: 'trace-insight',
+                            status: 'completed',
+                            title: `${insightsForTopic.metric} Analysis`,
+                            message: `Analyzed ${insightsForTopic.metric} performance`,
+                            timestamp: Date.now(),
+                            traceInsight: {
+                                metric: insightsForTopic.metric,
+                                metricValue: insightsForTopic.metricValue,
+                                metricType: insightsForTopic.metricType,
+                                metricScore: insightsForTopic.metricScore as 'good' | 'average' | 'poor',
+                                metricBreakdown: insightsForTopic.metricBreakdown,
+                                infoContent: insightsForTopic.infoContent,
+                            },
+                            overwrite: true,
+                        },
+                    });
+                }
+
                 const systemTemplate = `
 You are Perf Agent, a report editor specializing in performance reports and core web vitals insights analysis. Your task is to produce a report based on the performance trace analysis and insights data.
 

@@ -14,7 +14,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 
 export interface StreamUpdate {
     id: string;
-    type: 'plan' | 'web' | 'analysis' | 'progress' | 'insight';
+    type: 'plan' | 'web' | 'analysis' | 'progress' | 'insight' | 'trace-insight';
     status: 'running' | 'completed';
     timestamp: number;
     message: string;
@@ -46,6 +46,17 @@ export interface StreamUpdate {
         evidence: string[];
         confidence: number;
     }>;
+    traceInsight?: {
+        metric: string;
+        metricValue: string;
+        metricType: string;
+        metricScore: 'good' | 'average' | 'poor';
+        metricBreakdown?: Array<{
+            label: string;
+            value: string;
+        }>;
+        infoContent?: string;
+    };
     analysisType?: string;
     completedSteps?: number;
     totalSteps?: number;
@@ -84,6 +95,7 @@ const ResearchStep = ({
         progress: Loader2,
         analysis: Sparkles,
         'gap-search': Search,
+        'trace-insight': Sparkles,
     } as const;
 
     const isGapSearch = update.id.startsWith('gap-search');
@@ -214,6 +226,48 @@ const ResearchStep = ({
                                             </div>
                                         </motion.div>
                                     ))}
+                                </div>
+                            )}
+
+                            {/* Trace Insight Details */}
+                            {update.type === 'trace-insight' && update.traceInsight && (
+                                <div className="p-2 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm font-medium">{update.traceInsight.metric}</span>
+                                            <Badge
+                                                variant="secondary"
+                                                className={cn(
+                                                    'text-[10px]',
+                                                    update.traceInsight.metricScore === 'good' &&
+                                                        'bg-green-100 text-green-700',
+                                                    update.traceInsight.metricScore === 'average' &&
+                                                        'bg-yellow-100 text-yellow-700',
+                                                    update.traceInsight.metricScore === 'poor' &&
+                                                        'bg-red-100 text-red-700',
+                                                )}
+                                            >
+                                                {update.traceInsight.metricValue}
+                                            </Badge>
+                                        </div>
+
+                                        {update.traceInsight.metricBreakdown && (
+                                            <div className="space-y-1.5">
+                                                {update.traceInsight.metricBreakdown.map((item, idx) => (
+                                                    <div key={idx} className="flex justify-between text-xs">
+                                                        <span className="text-neutral-500">{item.label}</span>
+                                                        <span className="font-medium">{item.value}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {update.traceInsight.infoContent && (
+                                            <p className="text-xs text-neutral-500">
+                                                {update.traceInsight.infoContent}
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 
