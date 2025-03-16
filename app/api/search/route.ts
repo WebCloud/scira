@@ -996,17 +996,14 @@ Network performance (caching, compression)
                                         gap.additional_queries.map((query, idx) => {
                                             // For critical gaps, use 'all' sources for the first query
                                             // Distribute others across different source types for efficiency
-                                            const sourceTypes = ['web', 'academic', 'x', 'all'] as const;
-                                            let source: 'web' | 'academic' | 'x' | 'all';
+                                            const sourceTypes = ['web', 'all'] as const;
+                                            let source: 'web' | 'all';
 
                                             // Use 'all' for the first query of each gap, then rotate through specific sources
                                             if (idx === 0) {
                                                 source = 'all';
                                             } else {
-                                                source = sourceTypes[idx % (sourceTypes.length - 1)] as
-                                                    | 'web'
-                                                    | 'academic'
-                                                    | 'x';
+                                                source = sourceTypes[idx % (sourceTypes.length - 1)] as 'web' | 'all';
                                             }
 
                                             return {
