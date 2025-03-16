@@ -1,7 +1,6 @@
 // /app/api/chat/route.ts
 import { getGroupConfig } from '@/app/actions';
 import { serverEnv } from '@/env/server';
-import { xai } from '@ai-sdk/xai';
 import CodeInterpreter from '@e2b/code-interpreter';
 import FirecrawlApp from '@mendable/firecrawl-js';
 import { tavily } from '@tavily/core';
@@ -19,18 +18,25 @@ import {
 } from 'ai';
 import { z } from 'zod';
 import { geolocation } from '@vercel/functions';
-import MemoryClient from 'mem0ai';
-import { ollama } from 'ollama-ai-provider';
+import { createOpenAI } from '@ai-sdk/openai';
 import { analyzeInsights, TraceTopic } from '@/lib/insights';
+
+const openai = createOpenAI({
+    // custom settings, e.g.
+    baseURL: 'http://localhost:11434/v1',
+    apiKey: 'ollama', // required but unused
+    name: 'ollama',
+    compatibility: 'strict', // strict mode, enable when using the OpenAI API
+});
 
 const scira = customProvider({
     languageModels: {
-        'scira-default': ollama('qwen2.5-coder:14b', { structuredOutputs: true, simulateStreaming: true }),
-        'scira-vision': ollama('llama3.2-vision', { structuredOutputs: true, simulateStreaming: true }),
-        'scira-llama': ollama('llama3.1:8b', { structuredOutputs: true, simulateStreaming: true }),
-        'scira-sonnet': ollama('mixtral:8x7b', { structuredOutputs: true, simulateStreaming: true }),
+        'scira-default': openai('qwen2.5-coder:14b', { structuredOutputs: true, simulateStreaming: true }),
+        'scira-vision': openai('llama3.2-vision', { structuredOutputs: true, simulateStreaming: true }),
+        'scira-llama': openai('llama3.1:8b', { structuredOutputs: true, simulateStreaming: true }),
+        'scira-sonnet': openai('mixtral:8x7b', { structuredOutputs: true, simulateStreaming: true }),
         'scira-r1': wrapLanguageModel({
-            model: ollama('deepseek-r1:14b', { structuredOutputs: true, simulateStreaming: true }),
+            model: openai('deepseek-r1:14b', { structuredOutputs: true, simulateStreaming: true }),
             middleware: extractReasoningMiddleware({ tagName: 'think' }),
         }),
     },
@@ -178,7 +184,7 @@ export async function POST(req: Request) {
                     temperature: 0,
                     experimental_activeTools: [...activeTools],
                     system: toolInstructions,
-                    toolChoice: 'auto',
+                    toolChoice: 'required',
                     tools: {
                         text_translate: tool({
                             description: 'Translate text from one language to another.',
@@ -1282,44 +1288,6 @@ IMPORTANT: Use only the list of topics provided in the schema.`,
                     console.error('Error analyzing insights:', error);
                 }
 
-                // Add this before traceReportStream
-                if (insightsForTopic) {
-                    // Send running state for insights analysis
-                    dataStream.writeMessageAnnotation({
-                        type: 'research_update',
-                        data: {
-                            id: 'trace-insights',
-                            type: 'trace-insight',
-                            status: 'running',
-                            title: 'Performance Insights Analysis',
-                            message: 'Analyzing performance insights...',
-                            timestamp: Date.now(),
-                        },
-                    });
-
-                    // Send completed state with insights data
-                    dataStream.writeMessageAnnotation({
-                        type: 'research_update',
-                        data: {
-                            id: 'trace-insights',
-                            type: 'trace-insight',
-                            status: 'completed',
-                            title: `${insightsForTopic.metric} Analysis`,
-                            message: `Analyzed ${insightsForTopic.metric} performance`,
-                            timestamp: Date.now(),
-                            traceInsight: {
-                                metric: insightsForTopic.metric,
-                                metricValue: insightsForTopic.metricValue,
-                                metricType: insightsForTopic.metricType,
-                                metricScore: insightsForTopic.metricScore as 'good' | 'average' | 'poor',
-                                metricBreakdown: insightsForTopic.metricBreakdown,
-                                infoContent: insightsForTopic.infoContent,
-                            },
-                            overwrite: true,
-                        },
-                    });
-                }
-
                 const systemTemplate = `
 You are Perf Agent, a report editor specializing in performance reports and core web vitals insights analysis. Your task is to produce a report based on the performance trace analysis and insights data.
 
@@ -1354,7 +1322,11 @@ Here's the trace analysis (DO NOT INCLUDE THIS DATA IN THE RESPONSE. USE IT TO W
 ${JSON.stringify(insightsForTopic, null, 2)}
 \`\`\`
 
-FOLLOW THE REPORT STRUCTURE TO RESPOND.
+IMPORTANT:
+- ALWAYS FOLLOW THE REPORT TEMPLATE STRUCTURE ABOVE TO RESPOND.
+- ALWAYS run the reason_search tool!
+- use the insights for topic data to feed into the tool parameter schema
+- OBEY THE TOOL PARAMETER SCHEMA
 `;
 
                 const traceReportStream = streamText({
@@ -1362,11 +1334,108 @@ FOLLOW THE REPORT STRUCTURE TO RESPOND.
                     temperature: 0,
                     messages: convertToCoreMessages(messages),
                     system: systemTemplate,
+                    toolChoice: 'required',
+                    toolCallStreaming: false,
+                    tools: {
+                        reason_search: tool({
+                            description: 'Perform a trace insight analysis and return data for the report',
+                            parameters: z.object({
+                                metric: z.string().describe('Metric to analyze').optional(),
+                                metricValue: z.string().describe('Metric value to analyze').optional(),
+                                metricType: z.string().describe('Metric type to analyze').optional(),
+                                metricScore: z.string().describe('Metric score to analyze').optional(),
+                            }),
+                            execute: async (args) => {
+                                console.log(
+                                    '######################### TRACE REASON SEARCH #################################',
+                                    args,
+                                );
+                                // Add this before traceReportStream
+                                if (insightsForTopic) {
+                                    console.log(
+                                        '######################### sending annotations for trace-insight #################################',
+                                    );
+                                    // Send running state for insights analysis
+                                    dataStream.writeMessageAnnotation({
+                                        type: 'research_update',
+                                        data: {
+                                            id: 'trace-insights',
+                                            type: 'trace-insight',
+                                            status: 'running',
+                                            title: 'Performance Insights Analysis',
+                                            message: 'Analyzing performance insights...',
+                                            timestamp: Date.now(),
+                                        },
+                                    });
+
+                                    // Send completed state with insights data
+                                    dataStream.writeMessageAnnotation({
+                                        type: 'research_update',
+                                        data: {
+                                            id: 'trace-insights',
+                                            type: 'trace-insight',
+                                            status: 'completed',
+                                            title: `${insightsForTopic.metric} Analysis`,
+                                            message: `Analyzed ${insightsForTopic.metric} performance`,
+                                            timestamp: Date.now(),
+                                            traceInsight: {
+                                                metric: insightsForTopic.metric,
+                                                metricValue: insightsForTopic.metricValue,
+                                                metricType: insightsForTopic.metricType,
+                                                metricScore: insightsForTopic.metricScore as
+                                                    | 'good'
+                                                    | 'average'
+                                                    | 'poor',
+                                                metricBreakdown: insightsForTopic.metricBreakdown,
+                                                infoContent: insightsForTopic.infoContent,
+                                            },
+                                            overwrite: true,
+                                        },
+                                    });
+                                }
+
+                                const finalProgress = {
+                                    id: 'research-progress',
+                                    type: 'progress' as const,
+                                    status: 'completed' as const,
+                                    message: `Trace analysis complete`,
+                                    completedSteps: 1,
+                                    totalSteps: 1,
+                                    isComplete: true,
+                                    timestamp: Date.now(),
+                                };
+
+                                dataStream.writeMessageAnnotation({
+                                    type: 'research_update',
+                                    data: finalProgress,
+                                    overwrite: true,
+                                });
+
+                                return {
+                                    metric: args.metric,
+                                    metricValue: args.metricValue,
+                                };
+                            },
+                        }),
+                    },
+                    onFinish(event) {
+                        console.log(
+                            '######################### traceReportStream onFinish #################################',
+                        );
+                        console.log('Fin reason[2]: ', event.finishReason);
+                        console.log('Reasoning[2]: ', event.reasoning);
+                        console.log('reasoning details[2]: ', event.reasoningDetails);
+                    },
+                    onError(event) {
+                        console.log('Error: ', event.error);
+                    },
                 });
 
                 traceReportStream.mergeIntoDataStream(dataStream, {
                     experimental_sendStart: true,
                 });
+
+                console.log('######################### traceReportStream #################################');
 
                 const response = streamText({
                     model: scira.languageModel(model),
@@ -1389,9 +1458,7 @@ FOLLOW THE REPORT STRUCTURE TO RESPOND.
                     },
                 });
 
-                return response.mergeIntoDataStream(dataStream, {
-                    experimental_sendFinish: true,
-                });
+                return response.mergeIntoDataStream(dataStream);
             },
         });
     } else {

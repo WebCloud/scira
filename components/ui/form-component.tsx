@@ -493,6 +493,10 @@ const AttachmentPreview: React.FC<{
                         </div>
                     </div>
                 </div>
+            ) : attachment.name.includes('.json') ? (
+                <div className="w-10 h-10 flex items-center justify-center">
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">JSON</p>
+                </div>
             ) : (
                 <img
                     src={(attachment as Attachment).url}
@@ -511,7 +515,9 @@ const AttachmentPreview: React.FC<{
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">
                     {isUploadingAttachment(attachment)
                         ? 'Uploading...'
-                        : formatFileSize((attachment as Attachment).size)}
+                        : attachment.name.includes('.json')
+                        ? ''
+                        : formatFileSize(attachment.size)}
                 </p>
             </div>
             <motion.button
@@ -852,6 +858,14 @@ const FormComponent: React.FC<FormComponentProps> = ({
 
             setUploadQueue(files.map((file) => file.name));
 
+            if (files[0].type.startsWith('application/json')) {
+                const trace = await analyzeTraceFromFile(files[0]);
+                setTraceAnalysis(trace);
+
+                console.log('trace', trace);
+                return;
+            }
+
             try {
                 const uploadPromises = files.map((file) => uploadFile(file));
                 const uploadedAttachments = await Promise.all(uploadPromises);
@@ -909,17 +923,19 @@ const FormComponent: React.FC<FormComponentProps> = ({
                 return;
             }
 
+            const totalAttachments = attachments.length + files.length;
+            if (totalAttachments > MAX_IMAGES) {
+                toast.error(`You can only attach up to ${MAX_IMAGES} images.`);
+                return;
+            }
+
+            setUploadQueue(files.map((file) => file.name));
+
             if (files[0].type.startsWith('application/json')) {
                 const trace = await analyzeTraceFromFile(files[0]);
                 setTraceAnalysis(trace);
 
                 console.log('trace', trace);
-                return;
-            }
-
-            const totalAttachments = attachments.length + files.length;
-            if (totalAttachments > MAX_IMAGES) {
-                toast.error(`You can only attach up to ${MAX_IMAGES} images.`);
                 return;
             }
 
@@ -930,8 +946,6 @@ const FormComponent: React.FC<FormComponentProps> = ({
                 setSelectedModel(visionModel);
                 toast.success(`Switched to ${models.find((m) => m.value === visionModel)?.label} for image support`);
             }
-
-            setUploadQueue(files.map((file) => file.name));
 
             try {
                 const uploadPromises = files.map((file) => uploadFile(file));
@@ -1169,7 +1183,7 @@ const FormComponent: React.FC<FormComponentProps> = ({
                                 } as Attachment
                             }
                             onRemove={() => {}}
-                            isUploading={true}
+                            isUploading={!filename.includes('.json')}
                         />
                     ))}
                 </div>

@@ -222,6 +222,7 @@ const groupToolInstructions = {
   - Resource optimization (JS, CSS, images, fonts)
   - Network performance (caching, compression)
 
+  YOU MUST ALWAYS RUN THE TOOL FIRST! ALWAYS RUN THE REASON SEARCH TOOL FIRST!
 
   IMPORTANT: You MUST observe the tool schema to provide the correct input, OBSERVE THE SCHEMA FOR THE CORRECT INPUTS.
 
@@ -378,6 +379,7 @@ const groupResponseGuidelines = {
   })}.
  
   Extremely important:
+  - ALWAYS RUN THE TOOL FIRST!
   - You MUST run the tool first and then write the response with citations!
   - Place citations directly after relevant sentences or paragraphs, not as standalone bullet points
   - Citations should be where the information is referred to, not at the end of the response, this is extremely important
