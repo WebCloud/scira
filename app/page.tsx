@@ -1661,10 +1661,13 @@ const HomeContent = () => {
                     className={`w-full max-w-[90%] !font-sans sm:max-w-2xl space-y-6 p-0 mx-auto transition-all duration-300`}
                 >
                     {status === 'ready' && messages.length === 0 && (
-                        <div className="text-center !font-sans">
-                            <h1 className="text-2xl sm:text-4xl mb-6 text-neutral-800 dark:text-neutral-100 font-syne">
-                                What do you want to explore?
+                        <div className="text-center font-sans">
+                            <h1 className="text-2xl sm:text-4xl mb-6 text-neutral-800 dark:text-neutral-100">
+                                Hi! I'm PerfAgent!
                             </h1>
+                            <h2 className="text-lg sm:text-xl mb-6 text-neutral-800 dark:text-neutral-100">
+                                I'm here to help you analyze your performance traces.
+                            </h2>
                         </div>
                     )}
                     <AnimatePresence>
@@ -2030,7 +2033,7 @@ const ToolInvocationListView = memo(
                     '######################### toolInvocation #################################',
                     toolInvocation,
                 );
-                if (toolInvocation.toolName === 'reason_search') {
+                if (toolInvocation.toolName === 'reason_search' || toolInvocation.toolName === 'trace_analysis') {
                     console.log('######################### reason_search #################################', message);
                     const updates = message?.annotations
                         ?.filter((a: any) => a.type === 'research_update')

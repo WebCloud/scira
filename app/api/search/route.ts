@@ -178,450 +178,200 @@ export async function POST(req: Request) {
         console.log('Running inside part 1');
         return createDataStreamResponse({
             execute: async (dataStream) => {
-                const toolsResult = streamText({
-                    model: scira.languageModel(model),
-                    messages: convertToCoreMessages(messages),
+                console.log('we got here');
+
+                const systemTemplate = `
+You are Perf Agent, a report editor specializing in performance reports and core web vitals insights analysis.
+Your task is to produce a report, following a given template, based on the performance trace analysis and insights data.
+
+## Core Web Vitals Context
+
+Core Web Vitals are Google's metrics for measuring web page experience:
+- **Loading (LCP)**: Largest Contentful Paint - measures loading performance
+- **Interactivity (INP)**: Interaction to Next Paint - measures responsiveness
+- **Visual Stability (CLS)**: Cumulative Layout Shift - measures visual stability
+
+Additional important metrics include:
+- TTFB - Time to First Byte - also related to the loading time
+- FCP - First Contentful Paint - also related to the loading time
+- TBT - Total Blocking Time - related to blocking resources and the main thread
+
+## Your Process
+- Run the given tool to perform a trace analysis
+- Analyze the trace insights and produce a report following the template below
+- DO NOT INCLUDE ANY RESPONSE. THE TOOL CALL WILL PROVIDE THE RESPONSE
+
+IMPORTANT:
+- ALWAYS run the trace_analysis tool and use the insights for topic data to feed into the tool parameter schema
+- OBEY THE TOOL PARAMETER SCHEMA
+- DON'T INCLUDE ANYTHING IN THE RESPONSE
+`;
+
+                const traceReportStream = streamText({
+                    model: scira.languageModel('scira-default'),
                     temperature: 0,
-                    experimental_activeTools: [...activeTools],
-                    system: toolInstructions,
+                    messages: convertToCoreMessages(messages),
+                    system: systemTemplate,
                     toolChoice: 'required',
                     tools: {
-                        text_translate: tool({
-                            description: 'Translate text from one language to another.',
+                        trace_analysis: tool({
+                            description: 'Perform a trace insight analysis and return data for the report',
                             parameters: z.object({
-                                text: z.string().describe('The text to translate.'),
-                                to: z.string().describe("The language to translate to (e.g., 'fr' for French)."),
+                                metric: z.string().describe('Metric to analyze').optional(),
+                                metricType: z.string().describe('Metric type to analyze').optional(),
                             }),
-                            execute: async ({ text, to }: { text: string; to: string }) => {
-                                const { object: translation } = await generateObject({
-                                    model: scira.languageModel(model),
-                                    system: `You are a helpful assistant that translates text from one language to another.`,
-                                    prompt: `Translate the following text to ${to} language: ${text}`,
-                                    schema: z.object({
-                                        translatedText: z.string(),
-                                        detectedLanguage: z.string(),
-                                    }),
-                                });
-                                console.log(translation);
-                                return {
-                                    translatedText: translation.translatedText,
-                                    detectedLanguage: translation.detectedLanguage,
-                                };
-                            },
-                        }),
-                        web_search: tool({
-                            description:
-                                'Search the web for information with multiple queries, max results and search depth.',
-                            parameters: z.object({
-                                queries: z.array(z.string().describe('Array of search queries to look up on the web.')),
-                                maxResults: z.array(
-                                    z
-                                        .number()
-                                        .describe('Array of maximum number of results to return per query.')
-                                        .default(10),
-                                ),
-                                topics: z.array(
-                                    z
-                                        .enum(['general', 'news'])
-                                        .describe('Array of topic types to search for.')
-                                        .default('general'),
-                                ),
-                                searchDepth: z.array(
-                                    z
-                                        .enum(['basic', 'advanced'])
-                                        .describe('Array of search depths to use.')
-                                        .default('basic'),
-                                ),
-                                exclude_domains: z
-                                    .array(z.string())
-                                    .describe('A list of domains to exclude from all search results.')
-                                    .default([]),
-                            }),
-                            execute: async ({
-                                queries,
-                                maxResults,
-                                topics,
-                                searchDepth,
-                                exclude_domains,
-                            }: {
-                                queries: string[];
-                                maxResults: number[];
-                                topics: ('general' | 'news')[];
-                                searchDepth: ('basic' | 'advanced')[];
-                                exclude_domains?: string[];
-                            }) => {
-                                const apiKey = serverEnv.TAVILY_API_KEY;
-                                const tvly = tavily({ apiKey });
-                                const includeImageDescriptions = true;
-
-                                console.log('Queries:', queries);
-                                console.log('Max Results:', maxResults);
-                                console.log('Topics:', topics);
-                                console.log('Search Depths:', searchDepth);
-                                console.log('Exclude Domains:', exclude_domains);
-
-                                // Execute searches in parallel
-                                const searchPromises = queries.map(async (query, index) => {
-                                    const data = await tvly.search(query, {
-                                        topic: topics[index] || topics[0] || 'general',
-                                        days: topics[index] === 'news' ? 7 : undefined,
-                                        maxResults: maxResults[index] || maxResults[0] || 10,
-                                        searchDepth: searchDepth[index] || searchDepth[0] || 'basic',
-                                        includeAnswer: true,
-                                        includeImages: true,
-                                        includeImageDescriptions: includeImageDescriptions,
-                                        excludeDomains: exclude_domains,
-                                    });
-
-                                    // Add annotation for query completion
-                                    dataStream.writeMessageAnnotation({
-                                        type: 'query_completion',
-                                        data: {
-                                            query,
-                                            index,
-                                            total: queries.length,
-                                            status: 'completed',
-                                            resultsCount: data.results.length,
-                                            imagesCount: data.images.length,
-                                        },
-                                    });
-
-                                    return {
-                                        query,
-                                        results: deduplicateByDomainAndUrl(data.results).map((obj: any) => ({
-                                            url: obj.url,
-                                            title: obj.title,
-                                            content: obj.content,
-                                            raw_content: obj.raw_content,
-                                            published_date: topics[index] === 'news' ? obj.published_date : undefined,
-                                        })),
-                                        images: includeImageDescriptions
-                                            ? await Promise.all(
-                                                  deduplicateByDomainAndUrl(data.images).map(
-                                                      async ({
-                                                          url,
-                                                          description,
-                                                      }: {
-                                                          url: string;
-                                                          description?: string;
-                                                      }) => {
-                                                          const sanitizedUrl = sanitizeUrl(url);
-                                                          const isValid = await isValidImageUrl(sanitizedUrl);
-                                                          return isValid
-                                                              ? {
-                                                                    url: sanitizedUrl,
-                                                                    description: description ?? '',
-                                                                }
-                                                              : null;
-                                                      },
-                                                  ),
-                                              ).then((results) =>
-                                                  results.filter(
-                                                      (image): image is { url: string; description: string } =>
-                                                          image !== null &&
-                                                          typeof image === 'object' &&
-                                                          typeof image.description === 'string' &&
-                                                          image.description !== '',
-                                                  ),
-                                              )
-                                            : await Promise.all(
-                                                  deduplicateByDomainAndUrl(data.images).map(
-                                                      async ({ url }: { url: string }) => {
-                                                          const sanitizedUrl = sanitizeUrl(url);
-                                                          return (await isValidImageUrl(sanitizedUrl))
-                                                              ? sanitizedUrl
-                                                              : null;
-                                                      },
-                                                  ),
-                                              ).then((results) => results.filter((url) => url !== null) as string[]),
-                                    };
-                                });
-
-                                const searchResults = await Promise.all(searchPromises);
-
-                                return {
-                                    searches: searchResults,
-                                };
-                            },
-                        }),
-                        retrieve: tool({
-                            description: 'Retrieve the information from a URL using Firecrawl.',
-                            parameters: z.object({
-                                url: z.string().describe('The URL to retrieve the information from.'),
-                            }),
-                            execute: async ({ url }: { url: string }) => {
-                                const app = new FirecrawlApp({
-                                    apiKey: serverEnv.FIRECRAWL_API_KEY,
-                                });
-                                try {
-                                    const content = await app.scrapeUrl(url);
-                                    if (!content.success || !content.metadata) {
-                                        return {
-                                            results: [
-                                                {
-                                                    error: content.error,
-                                                },
-                                            ],
-                                        };
-                                    }
-
-                                    // Define schema for extracting missing content
-                                    const schema = z.object({
-                                        title: z.string(),
-                                        content: z.string(),
-                                        description: z.string(),
-                                    });
-
-                                    let title = content.metadata.title;
-                                    let description = content.metadata.description;
-                                    let extractedContent = content.markdown;
-
-                                    // If any content is missing, use extract to get it
-                                    if (!title || !description || !extractedContent) {
-                                        const extractResult = await app.extract([url], {
-                                            prompt: 'Extract the page title, main content, and a brief description.',
-                                            schema: schema,
-                                        });
-
-                                        if (extractResult.success && extractResult.data) {
-                                            title = title || extractResult.data.title;
-                                            description = description || extractResult.data.description;
-                                            extractedContent = extractedContent || extractResult.data.content;
-                                        }
-                                    }
-
-                                    return {
-                                        results: [
-                                            {
-                                                title: title || 'Untitled',
-                                                content: extractedContent || '',
-                                                url: content.metadata.sourceURL,
-                                                description: description || '',
-                                                language: content.metadata.language,
-                                            },
-                                        ],
-                                    };
-                                } catch (error) {
-                                    console.error('Firecrawl API error:', error);
-                                    return { error: 'Failed to retrieve content' };
-                                }
-                            },
-                        }),
-                        code_interpreter: tool({
-                            description: 'Write and execute Python code.',
-                            parameters: z.object({
-                                title: z.string().describe('The title of the code snippet.'),
-                                code: z
-                                    .string()
-                                    .describe(
-                                        'The Python code to execute. put the variables in the end of the code to print them. do not use the print function.',
-                                    ),
-                                icon: z
-                                    .enum(['stock', 'date', 'calculation', 'default'])
-                                    .describe('The icon to display for the code snippet.'),
-                            }),
-                            execute: async ({ code, title, icon }: { code: string; title: string; icon: string }) => {
-                                console.log('Code:', code);
-                                console.log('Title:', title);
-                                console.log('Icon:', icon);
-
-                                const sandbox = await CodeInterpreter.create(serverEnv.SANDBOX_TEMPLATE_ID!);
-                                const execution = await sandbox.runCode(code);
-                                let message = '';
-
-                                if (execution.results.length > 0) {
-                                    for (const result of execution.results) {
-                                        if (result.isMainResult) {
-                                            message += `${result.text}\n`;
-                                        } else {
-                                            message += `${result.text}\n`;
-                                        }
-                                    }
-                                }
-
-                                if (execution.logs.stdout.length > 0 || execution.logs.stderr.length > 0) {
-                                    if (execution.logs.stdout.length > 0) {
-                                        message += `${execution.logs.stdout.join('\n')}\n`;
-                                    }
-                                    if (execution.logs.stderr.length > 0) {
-                                        message += `${execution.logs.stderr.join('\n')}\n`;
-                                    }
-                                }
-
-                                if (execution.error) {
-                                    message += `Error: ${execution.error}\n`;
-                                    console.log('Error: ', execution.error);
-                                }
-
-                                console.log(execution.results);
-                                if (execution.results[0].chart) {
-                                    execution.results[0].chart.elements.map((element: any) => {
-                                        console.log(element.points);
-                                    });
-                                }
-
-                                return {
-                                    message: message.trim(),
-                                    chart: execution.results[0].chart ?? '',
-                                };
-                            },
-                        }),
-                        text_search: tool({
-                            description: 'Perform a text-based search for places using Mapbox API.',
-                            parameters: z.object({
-                                query: z.string().describe("The search query (e.g., '123 main street')."),
-                                location: z
-                                    .string()
-                                    .describe("The location to center the search (e.g., '42.3675294,-71.186966')."),
-                                radius: z.number().describe('The radius of the search area in meters (max 50000).'),
-                            }),
-                            execute: async ({
-                                query,
-                                location,
-                                radius,
-                            }: {
-                                query: string;
-                                location?: string;
-                                radius?: number;
-                            }) => {
-                                const mapboxToken = serverEnv.MAPBOX_ACCESS_TOKEN;
-
-                                let proximity = '';
-                                if (location) {
-                                    const [lng, lat] = location.split(',').map(Number);
-                                    proximity = `&proximity=${lng},${lat}`;
-                                }
-
-                                const response = await fetch(
-                                    `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
-                                        query,
-                                    )}.json?types=poi${proximity}&access_token=${mapboxToken}`,
+                            execute: async (args) => {
+                                console.log(
+                                    '######################### TRACE REASON SEARCH #################################',
+                                    args,
                                 );
-                                const data = await response.json();
+                                // Send running state for insights analysis
+                                dataStream.writeMessageAnnotation({
+                                    type: 'research_update',
+                                    data: {
+                                        id: 'trace-insights',
+                                        type: 'trace-insight',
+                                        status: 'running',
+                                        title: 'Performance Insights Analysis',
+                                        message: 'Analyzing performance insights...',
+                                        timestamp: Date.now(),
+                                    },
+                                });
 
-                                // If location and radius provided, filter results by distance
-                                let results = data.features;
-                                if (location && radius) {
-                                    const [centerLng, centerLat] = location.split(',').map(Number);
-                                    const radiusInDegrees = radius / 111320;
-                                    results = results.filter((feature: any) => {
-                                        const [placeLng, placeLat] = feature.center;
-                                        const distance = Math.sqrt(
-                                            Math.pow(placeLng - centerLng, 2) + Math.pow(placeLat - centerLat, 2),
-                                        );
-                                        return distance <= radiusInDegrees;
+                                const { object: insightTopic } = await generateObject({
+                                    model: scira.languageModel('scira-default'),
+                                    temperature: 0,
+                                    messages: convertToCoreMessages(messages),
+                                    schema: z.object({
+                                        topic: z.nativeEnum(TraceTopic).describe('Topic of the trace'),
+                                        researchTopic: z
+                                            .string()
+                                            .describe('Research topic basd on the topic user query'),
+                                    }),
+                                    system: `You are a web performance analysis expert specializing in Core Web Vitals. Your task is to analyze user queries about web performance issues, classify them into relevant categories.
+Pick a topic from the schema given based on the user's message.
+Use only the list of topics provided in the schema.
+
+Those topics represent different aspects of a performance trace.
+
+Core Web Vitals Context
+Core Web Vitals are Google's metrics for measuring web page experience:
+
+Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
+Interactivity (INP): Interaction to Next Paint - measures responsiveness (100ms or less is good)
+Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
+
+Additional important metrics include:
+
+TTFB (Time to First Byte)
+FCP (First Contentful Paint)
+TTI (Time to Interactive)
+TBT (Total Blocking Time)
+Resource optimization (JS, CSS, images, fonts)
+Network performance (caching, compression)
+
+Your Process
+
+Analyze the user's query about web performance
+Classify it into relevant web vitals categories
+
+IMPORTANT: Use only the list of topics provided in the schema.`,
+                                });
+
+                                console.log({ insightTopic }, 'insightTopic!!!');
+                                let insightsForTopic;
+                                try {
+                                    insightsForTopic = await analyzeInsights(
+                                        insights,
+                                        userInteractions,
+                                        insightTopic.topic,
+                                    );
+                                } catch (error) {
+                                    console.error('Error analyzing insights:', error);
+                                }
+
+                                // Add this before traceReportStream
+                                if (insightsForTopic) {
+                                    console.log(
+                                        '######################### sending annotations for trace-insight #################################',
+                                    );
+
+                                    // Send completed state with insights data
+                                    dataStream.writeMessageAnnotation({
+                                        type: 'research_update',
+                                        data: {
+                                            id: 'trace-insights',
+                                            type: 'trace-insight',
+                                            status: 'completed',
+                                            title: `${insightsForTopic.metric} Analysis`,
+                                            message: `Analyzed ${insightsForTopic.metric} performance`,
+                                            timestamp: Date.now(),
+                                            traceInsight: {
+                                                metric: insightsForTopic.metric,
+                                                metricValue: insightsForTopic.metricValue,
+                                                metricType: insightsForTopic.metricType,
+                                                metricScore: insightsForTopic.metricScore as
+                                                    | 'good'
+                                                    | 'average'
+                                                    | 'poor',
+                                                metricBreakdown: insightsForTopic.metricBreakdown,
+                                                infoContent: insightsForTopic.infoContent,
+                                            },
+                                            overwrite: true,
+                                        },
                                     });
                                 }
 
-                                return {
-                                    results: results.map((feature: any) => ({
-                                        name: feature.text,
-                                        formatted_address: feature.place_name,
-                                        geometry: {
-                                            location: {
-                                                lat: feature.center[1],
-                                                lng: feature.center[0],
-                                            },
-                                        },
-                                    })),
-                                };
-                            },
-                        }),
-                        datetime: tool({
-                            description: "Get the current date and time in the user's timezone",
-                            parameters: z.object({}),
-                            execute: async () => {
-                                try {
-                                    // Get current date and time
-                                    const now = new Date();
+                                const reportTemplate = `
+You are Perf Agent, a report editor specializing in performance reports and core web vitals insights analysis.
+Your task is to produce a report, following a given template, based on the performance trace analysis and insights data.
 
-                                    // Use geolocation to determine timezone
-                                    let userTimezone = 'UTC'; // Default to UTC
+## Core Web Vitals Context
 
-                                    if (geo && geo.latitude && geo.longitude) {
-                                        try {
-                                            // Get timezone from coordinates using Google Maps API
-                                            const tzResponse = await fetch(
-                                                `https://maps.googleapis.com/maps/api/timezone/json?location=${
-                                                    geo.latitude
-                                                },${geo.longitude}&timestamp=${Math.floor(now.getTime() / 1000)}&key=${
-                                                    serverEnv.GOOGLE_MAPS_API_KEY
-                                                }`,
-                                            );
+Core Web Vitals are Google's metrics for measuring web page experience:
+- **Loading (LCP)**: Largest Contentful Paint - measures loading performance
+- **Interactivity (INP)**: Interaction to Next Paint - measures responsiveness
+- **Visual Stability (CLS)**: Cumulative Layout Shift - measures visual stability
 
-                                            if (tzResponse.ok) {
-                                                const tzData = await tzResponse.json();
-                                                if (tzData.status === 'OK' && tzData.timeZoneId) {
-                                                    userTimezone = tzData.timeZoneId;
-                                                    console.log(
-                                                        `Timezone determined from coordinates: ${userTimezone}`,
-                                                    );
-                                                } else {
-                                                    console.log(
-                                                        `Failed to get timezone from coordinates: ${
-                                                            tzData.status || 'Unknown error'
-                                                        }`,
-                                                    );
-                                                }
-                                            } else {
-                                                console.log(
-                                                    `Timezone API request failed with status: ${tzResponse.status}`,
-                                                );
-                                            }
-                                        } catch (error) {
-                                            console.error('Error fetching timezone from coordinates:', error);
-                                        }
-                                    } else {
-                                        console.log('No geolocation data available, using UTC');
-                                    }
+Additional important metrics include:
+- TTFB - Time to First Byte - also related to the loading time
+- FCP - First Contentful Paint - also related to the loading time
+- TBT - Total Blocking Time - related to blocking resources and the main thread
 
-                                    // Format date and time using the timezone
-                                    return {
-                                        timestamp: now.getTime(),
-                                        iso: now.toISOString(),
-                                        timezone: userTimezone,
-                                        formatted: {
-                                            date: new Intl.DateTimeFormat('en-US', {
-                                                weekday: 'long',
-                                                year: 'numeric',
-                                                month: 'long',
-                                                day: 'numeric',
-                                                timeZone: userTimezone,
-                                            }).format(now),
-                                            time: new Intl.DateTimeFormat('en-US', {
-                                                hour: '2-digit',
-                                                minute: '2-digit',
-                                                second: '2-digit',
-                                                hour12: true,
-                                                timeZone: userTimezone,
-                                            }).format(now),
-                                            dateShort: new Intl.DateTimeFormat('en-US', {
-                                                month: 'short',
-                                                day: 'numeric',
-                                                year: 'numeric',
-                                                timeZone: userTimezone,
-                                            }).format(now),
-                                            timeShort: new Intl.DateTimeFormat('en-US', {
-                                                hour: '2-digit',
-                                                minute: '2-digit',
-                                                hour12: true,
-                                                timeZone: userTimezone,
-                                            }).format(now),
-                                        },
-                                    };
-                                } catch (error) {
-                                    console.error('Datetime error:', error);
-                                    throw error;
-                                }
-                            },
-                        }),
-                        reason_search: tool({
-                            description: 'Perform a reasoned web search with multiple steps and sources.',
-                            parameters: z.object({
-                                topic: z.string().describe('The main topic or question to research'),
-                                depth: z.enum(['basic', 'advanced']).describe('Search depth level').default('basic'),
-                            }),
-                            execute: async ({ topic, depth }: { topic: string; depth: 'basic' | 'advanced' }) => {
+## Your Process
+- Analyze the trace insights and produce a report following the template below
+- Introduce a section to breakdown some of the key insights data
+- USE THE INSIGHTS FOR TOPIC TO WRITE THE REPORT SECTION ON THE TRACE ANALYSIS
+- Example trace analysis bellow:
+  
+# <topic> report based on trace analysis
+
+## Actionable Optimizations
+**Your <topic> value is <metricValue from insights data> and your score is <metricScore from insights data>**
+
+### <topic from insights data>
+* <sub-topic from insights data>: your longest interaction event in the trace is about 100ms
+
+
+IMPORTANT:
+- ALWAYS FOLLOW THE REPORT TEMPLATE STRUCTURE ABOVE TO RESPOND.
+- DON'T INCLUDE ANYTHING ELSE IN THE RESPONSE OTHER THAN THE REPORT FOLLOWING THE TEMPLATE STRUCTURE ABOVE
+
+Here's the trace analysis (DO NOT INCLUDE THIS DATA IN THE RESPONSE. USE IT TO WRITE THE REPORT SECTION ON THE TRACE ANALYSIS):
+\`\`\`json
+${JSON.stringify(insightsForTopic, null, 2)}
+\`\`\`
+`;
+
+                                const reportStream = streamText({
+                                    model: scira.languageModel('scira-default'),
+                                    temperature: 0,
+                                    messages: convertToCoreMessages(messages),
+                                    system: reportTemplate,
+                                });
+
+                                reportStream.mergeIntoDataStream(dataStream);
+
                                 const apiKey = serverEnv.TAVILY_API_KEY;
                                 const tvly = tavily({ apiKey });
 
@@ -638,6 +388,8 @@ export async function POST(req: Request) {
                                         overwrite: true,
                                     },
                                 });
+
+                                const depth = 'advanced';
 
                                 // Now generate the research plan
                                 const { object: researchPlan } = await generateObject({
@@ -664,47 +416,52 @@ export async function POST(req: Request) {
                                             )
                                             .max(8),
                                     }),
-                                    prompt: `Create a focused research plan for the topic: "${topic}". 
-                                        
-                                        Today's date and day of the week: ${new Date().toLocaleDateString('en-US', {
-                                            weekday: 'long',
-                                            year: 'numeric',
-                                            month: 'long',
-                                            day: 'numeric',
-                                        })}
-                                
-                                        Keep the plan concise but comprehensive, with:
-                                        - 4-8 targeted search queries (each can use web as source. Focus on web.dev as main source whenever possible)
-                                        - 2-4 key analyses to perform
-                                        - Prioritize the most important aspects to investigate
-                                        
-                                        Available sources:
-                                        - "web": General web search
-                                        
-                                        Do not use floating numbers, use whole numbers only in the priority field!!
-                                        Do not keep the numbers too low or high, make them reasonable in between.
-                                        Do not use 0 or 1 in the priority field, use numbers between 2 and 4.
-                                        
-                                        Consider related topics, but maintain focus on the core aspects.
-                                        Here's the list of topics represent different aspects of a performance trace.
+                                    prompt: `Create a focused research plan for the topic: "${
+                                        insightTopic.researchTopic
+                                    }".
 
-Core Web Vitals Context
-Core Web Vitals are Google's metrics for measuring web page experience:
+                                                        Today's date and day of the week: ${new Date().toLocaleDateString(
+                                                            'en-US',
+                                                            {
+                                                                weekday: 'long',
+                                                                year: 'numeric',
+                                                                month: 'long',
+                                                                day: 'numeric',
+                                                            },
+                                                        )}
 
-Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
-Interactivity (INP): Interaction to Next Paint - measures responsiveness (100ms or less is good)
-Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
+                                                        Keep the plan concise but comprehensive, with:
+                                                        - 4-8 targeted search queries (each can use web as source. Focus on web.dev as main source whenever possible)
+                                                        - 2-4 key analyses to perform
+                                                        - Prioritize the most important aspects to investigate
 
-Additional important metrics include:
+                                                        Available sources:
+                                                        - "web": General web search
 
-TTFB (Time to First Byte)
-FCP (First Contentful Paint)
-TTI (Time to Interactive)
-TBT (Total Blocking Time)
-Resource optimization (JS, CSS, images, fonts)
-Network performance (caching, compression)
+                                                        Do not use floating numbers, use whole numbers only in the priority field!!
+                                                        Do not keep the numbers too low or high, make them reasonable in between.
+                                                        Do not use 0 or 1 in the priority field, use numbers between 2 and 4.
 
-                                        Ensure the total number of steps (searches + analyses) does not exceed 10.`,
+                                                        Consider related topics, but maintain focus on the core aspects.
+                                                        Here's the list of topics represent different aspects of a performance trace.
+
+                Core Web Vitals Context
+                Core Web Vitals are Google's metrics for measuring web page experience:
+
+                Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
+                Interactivity (INP): Interaction to Next Paint - measures responsiveness (100ms or less is good)
+                Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
+
+                Additional important metrics include:
+
+                TTFB (Time to First Byte)
+                FCP (First Contentful Paint)
+                TTI (Time to Interactive)
+                TBT (Total Blocking Time)
+                Resource optimization (JS, CSS, images, fonts)
+                Network performance (caching, compression)
+
+                                                        Ensure the total number of steps (searches + analyses) does not exceed 10.`,
                                 });
 
                                 // Generate IDs for all steps based on the plan
@@ -733,8 +490,8 @@ Network performance (caching, compression)
                                 };
 
                                 const stepIds = generateStepIds(researchPlan);
-                                let completedSteps = 0;
-                                const totalSteps = stepIds.searchSteps.length + stepIds.analysisSteps.length;
+                                let completedSteps = 1;
+                                const totalSteps = stepIds.searchSteps.length + stepIds.analysisSteps.length + 1;
 
                                 // Complete plan status
                                 dataStream.writeMessageAnnotation({
@@ -862,9 +619,9 @@ Network performance (caching, compression)
                                         prompt: `Perform a ${step.analysis.type} analysis on the search results. ${
                                             step.analysis.description
                                         }
-                                            Consider all sources and their reliability.
-                                            Search results: ${JSON.stringify(searchResults)}
-                                            IMPORTANT: ENSURE TO RETURN CONFIDENCE SCORES BETWEEN 0 AND 1.`,
+                                                            Consider all sources and their reliability.
+                                                            Search results: ${JSON.stringify(searchResults)}
+                                                            IMPORTANT: ENSURE TO RETURN CONFIDENCE SCORES BETWEEN 0 AND 1.`,
                                     });
 
                                     dataStream.writeMessageAnnotation({
@@ -928,45 +685,45 @@ Network performance (caching, compression)
                                         ),
                                     }),
                                     prompt: `Analyze the research results and identify limitations, knowledge gaps, and recommended follow-up actions.
-                                        Consider:
-                                        - Quality and reliability of sources (prefer web.dev as main source whenever possible)
-                                        - Missing alignment to main topic or data
-                                        - Areas needing deeper investigation (focus on web performance and web vitals always)
-                                        - Severity should be between 2 and 10
-                                        - Knowledge gaps should be between 2 and 10
-                                        - Do not keep the numbers too low or high, make them reasonable in between
-                                        
-                                        When suggesting additional_queries for knowledge gaps, keep in mind these will be used to search:
-                                        - Web sources (prefer web.dev as main source whenever possible)
-                                        
-                                        Design your additional_queries to work well across these different source types.
+                                                        Consider:
+                                                        - Quality and reliability of sources (prefer web.dev as main source whenever possible)
+                                                        - Missing alignment to main topic or data
+                                                        - Areas needing deeper investigation (focus on web performance and web vitals always)
+                                                        - Severity should be between 2 and 10
+                                                        - Knowledge gaps should be between 2 and 10
+                                                        - Do not keep the numbers too low or high, make them reasonable in between
 
-                                        Here's the list of topics represent different aspects of a performance trace.
+                                                        When suggesting additional_queries for knowledge gaps, keep in mind these will be used to search:
+                                                        - Web sources (prefer web.dev as main source whenever possible)
 
-                                        Core Web Vitals Context
-                                        Core Web Vitals are Google's metrics for measuring web page experience:
+                                                        Design your additional_queries to work well across these different source types.
 
-                                        Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
-                                        Interactivity (INP): Interaction to Next Paint - measures responsiveness (100ms or less is good)
-                                        Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
+                                                        Here's the list of topics represent different aspects of a performance trace.
 
-                                        Additional important metrics include:
+                                                        Core Web Vitals Context
+                                                        Core Web Vitals are Google's metrics for measuring web page experience:
 
-                                        TTFB (Time to First Byte)
-                                        FCP (First Contentful Paint)
-                                        TTI (Time to Interactive)
-                                        TBT (Total Blocking Time)
-                                        Resource optimization (JS, CSS, images, fonts)
-                                        Network performance (caching, compression)
-                                        
-                                        Research results: ${JSON.stringify(searchResults)}
-                                        Analysis findings: ${JSON.stringify(
-                                            stepIds.analysisSteps.map((step) => ({
-                                                type: step.analysis.type,
-                                                description: step.analysis.description,
-                                                importance: step.analysis.importance,
-                                            })),
-                                        )}`,
+                                                        Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
+                                                        Interactivity (INP): Interaction to Next Paint - measures responsiveness (100ms or less is good)
+                                                        Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
+
+                                                        Additional important metrics include:
+
+                                                        TTFB (Time to First Byte)
+                                                        FCP (First Contentful Paint)
+                                                        TTI (Time to Interactive)
+                                                        TBT (Total Blocking Time)
+                                                        Resource optimization (JS, CSS, images, fonts)
+                                                        Network performance (caching, compression)
+
+                                                        Research results: ${JSON.stringify(searchResults)}
+                                                        Analysis findings: ${JSON.stringify(
+                                                            stepIds.analysisSteps.map((step) => ({
+                                                                type: step.analysis.type,
+                                                                description: step.analysis.description,
+                                                                importance: step.analysis.importance,
+                                                            })),
+                                                        )}`,
                                 });
 
                                 // Send gap analysis update
@@ -1114,13 +871,13 @@ Network performance (caching, compression)
                                             remaining_uncertainties: z.array(z.string()),
                                         }),
                                         prompt: `Synthesize all research findings, including gap analysis and follow-up research.
-                                            Highlight key conclusions and remaining uncertainties.
-                                            Stick to the types of the schema, do not add any other fields or types.
-                                            
-                                            Original results: ${JSON.stringify(searchResults)}
-                                            Gap analysis: ${JSON.stringify(gapAnalysis)}
-                                            Additional findings: ${JSON.stringify(additionalQueries)}
-                                            IMPORTANT: ENSURE TO RETURN CONFIDENCE SCORES BETWEEN 0 AND 1.`,
+                                                            Highlight key conclusions and remaining uncertainties.
+                                                            Stick to the types of the schema, do not add any other fields or types.
+
+                                                            Original results: ${JSON.stringify(searchResults)}
+                                                            Gap analysis: ${JSON.stringify(gapAnalysis)}
+                                                            Additional findings: ${JSON.stringify(additionalQueries)}
+                                                            IMPORTANT: ENSURE TO RETURN CONFIDENCE SCORES BETWEEN 0 AND 1.`,
                                     });
 
                                     synthesis = finalSynthesis;
@@ -1149,258 +906,30 @@ Network performance (caching, compression)
                                     });
                                 }
 
-                                // Final progress update
-                                const finalProgress = {
-                                    id: 'research-progress',
-                                    type: 'progress' as const,
-                                    status: 'completed' as const,
-                                    message: `Research complete`,
-                                    completedSteps: totalSteps + (depth === 'advanced' ? 2 : 1),
-                                    totalSteps: totalSteps + (depth === 'advanced' ? 2 : 1),
-                                    isComplete: true,
-                                    timestamp: Date.now(),
-                                };
-
-                                dataStream.writeMessageAnnotation({
-                                    type: 'research_update',
-                                    data: {
-                                        ...finalProgress,
-                                        overwrite: true,
-                                    },
+                                const researchReport = streamText({
+                                    model: scira.languageModel('scira-default'),
+                                    temperature: 0,
+                                    system: responseGuidelines,
+                                    messages: [
+                                        ...convertToCoreMessages(messages),
+                                        {
+                                            role: 'user',
+                                            content: `
+                                            Research plan: ${JSON.stringify(researchPlan)}
+                                            Search results: ${JSON.stringify(searchResults)}
+                                            Synthesis: ${JSON.stringify(synthesis)}
+                                            `,
+                                        },
+                                    ],
                                 });
-
-                                return {
-                                    plan: researchPlan,
-                                    results: searchResults,
-                                    synthesis: synthesis,
-                                };
-                            },
-                        }),
-                    },
-                    experimental_repairToolCall: async ({ toolCall, tools, parameterSchema, error }) => {
-                        if (NoSuchToolError.isInstance(error)) {
-                            return null; // do not attempt to fix invalid tool names
-                        }
-
-                        console.log('Fixing tool call================================');
-                        console.log('toolCall', toolCall);
-                        console.log('tools', tools);
-                        console.log('parameterSchema', parameterSchema);
-                        console.log('error', error);
-
-                        const tool = tools[toolCall.toolName as keyof typeof tools];
-
-                        const { object: repairedArgs } = await generateObject({
-                            model: scira.languageModel('scira-default'),
-                            schema: tool.parameters,
-                            prompt: [
-                                `The model tried to call the tool "${toolCall.toolName}"` +
-                                    ` with the following arguments:`,
-                                JSON.stringify(toolCall.args),
-                                `The tool accepts the following schema:`,
-                                JSON.stringify(parameterSchema(toolCall)),
-                                'Please fix the arguments.',
-                                'Do not use print statements stock chart tool.',
-                                `For the stock chart tool you have to generate a python code with matplotlib and yfinance to plot the stock chart.`,
-                                `For the web search make multiple queries to get the best results.`,
-                                `Today's date is ${new Date().toLocaleDateString('en-US', {
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric',
-                                })}`,
-                            ].join('\n'),
-                        });
-
-                        console.log('repairedArgs', repairedArgs);
-
-                        return { ...toolCall, args: JSON.stringify(repairedArgs) };
-                    },
-                    onChunk(event) {
-                        if (event.chunk.type === 'tool-call') {
-                            console.log('Called Tool: ', event.chunk.toolName);
-                        }
-                    },
-                    onStepFinish(event) {
-                        if (event.warnings) {
-                            console.log('Warnings: ', event.warnings);
-                        }
-                    },
-                    onFinish(event) {
-                        console.log('Fin reason[1]: ', event.finishReason);
-                        console.log('Reasoning[1]: ', event.reasoning);
-                        console.log('reasoning details[1]: ', event.reasoningDetails);
-                        console.log('Steps[1] ', event.steps);
-                        console.log('Messages[1]: ', event.response.messages);
-                    },
-                    onError(event) {
-                        console.log('Error: ', event.error);
-                    },
-                });
-
-                toolsResult.mergeIntoDataStream(dataStream, {
-                    experimental_sendFinish: false,
-                });
-
-                console.log('we got here');
-
-                const { object: insightTopic } = await generateObject({
-                    model: scira.languageModel('scira-default'),
-                    temperature: 0,
-                    messages: convertToCoreMessages(messages),
-                    schema: z.object({
-                        topic: z.nativeEnum(TraceTopic).describe('Topic of the trace'),
-                    }),
-                    system: `You are a web performance analysis expert specializing in Core Web Vitals. Your task is to analyze user queries about web performance issues, classify them into relevant categories.
-Pick a topic from the schema given based on the user's message.
-Use only the list of topics provided in the schema.
-
-Those topics represent different aspects of a performance trace.
-
-Core Web Vitals Context
-Core Web Vitals are Google's metrics for measuring web page experience:
-
-Loading (LCP): Largest Contentful Paint - measures loading performance (2.5s or less is good)
-Interactivity (INP): Interaction to Next Paint - measures responsiveness (100ms or less is good)
-Visual Stability (CLS): Cumulative Layout Shift - measures visual stability (0.1 or less is good)
-
-Additional important metrics include:
-
-TTFB (Time to First Byte)
-FCP (First Contentful Paint)
-TTI (Time to Interactive)
-TBT (Total Blocking Time)
-Resource optimization (JS, CSS, images, fonts)
-Network performance (caching, compression)
-
-Your Process
-
-Analyze the user's query about web performance
-Classify it into relevant web vitals categories
-
-IMPORTANT: Use only the list of topics provided in the schema.`,
-                });
-
-                console.log({ insightTopic }, 'insightTopic!!!');
-                let insightsForTopic;
-                try {
-                    insightsForTopic = await analyzeInsights(insights, userInteractions, insightTopic.topic);
-                } catch (error) {
-                    console.error('Error analyzing insights:', error);
-                }
-
-                const systemTemplate = `
-You are Perf Agent, a report editor specializing in performance reports and core web vitals insights analysis. Your task is to produce a report based on the performance trace analysis and insights data.
-
-## Core Web Vitals Context
-
-Core Web Vitals are Google's metrics for measuring web page experience:
-- **Loading (LCP)**: Largest Contentful Paint - measures loading performance
-- **Interactivity (INP)**: Interaction to Next Paint - measures responsiveness
-- **Visual Stability (CLS)**: Cumulative Layout Shift - measures visual stability
-
-Additional important metrics include:
-- TTFB - Time to First Byte - also related to the loading time
-- FCP - First Contentful Paint - also related to the loading time
-- TBT - Total Blocking Time - related to blocking resources and the main thread
-
-## Your Process
-- Analyze the trace insights and produce a report following the template below
-- Introduce a section to breakdown some of the key insights data
-- USE THE INSIGHTS FOR TOPIC TO WRITE THE REPORT SECTION ON THE TRACE ANALYSIS
-- Example trace analysis bellow:
-  
-# <topic> report based on trace analysis
-
-## Actionable Optimizations
-** Your <topic> value is <metricValue from insights data> and your score is <metricScore from insights data> **
-
-### <topic from insights data>
-* <sub-topic from insights data>: your longest interaction event in the trace is about 100ms
-
-Here's the trace analysis (DO NOT INCLUDE THIS DATA IN THE RESPONSE. USE IT TO WRITE THE REPORT SECTION ON THE TRACE ANALYSIS):
-\`\`\`json
-${JSON.stringify(insightsForTopic, null, 2)}
-\`\`\`
-
-IMPORTANT:
-- ALWAYS FOLLOW THE REPORT TEMPLATE STRUCTURE ABOVE TO RESPOND.
-- ALWAYS run the reason_search tool!
-- use the insights for topic data to feed into the tool parameter schema
-- OBEY THE TOOL PARAMETER SCHEMA
-`;
-
-                const traceReportStream = streamText({
-                    model: scira.languageModel('scira-default'),
-                    temperature: 0,
-                    messages: convertToCoreMessages(messages),
-                    system: systemTemplate,
-                    toolChoice: 'required',
-                    toolCallStreaming: false,
-                    tools: {
-                        reason_search: tool({
-                            description: 'Perform a trace insight analysis and return data for the report',
-                            parameters: z.object({
-                                metric: z.string().describe('Metric to analyze').optional(),
-                                metricValue: z.string().describe('Metric value to analyze').optional(),
-                                metricType: z.string().describe('Metric type to analyze').optional(),
-                                metricScore: z.string().describe('Metric score to analyze').optional(),
-                            }),
-                            execute: async (args) => {
-                                console.log(
-                                    '######################### TRACE REASON SEARCH #################################',
-                                    args,
-                                );
-                                // Add this before traceReportStream
-                                if (insightsForTopic) {
-                                    console.log(
-                                        '######################### sending annotations for trace-insight #################################',
-                                    );
-                                    // Send running state for insights analysis
-                                    dataStream.writeMessageAnnotation({
-                                        type: 'research_update',
-                                        data: {
-                                            id: 'trace-insights',
-                                            type: 'trace-insight',
-                                            status: 'running',
-                                            title: 'Performance Insights Analysis',
-                                            message: 'Analyzing performance insights...',
-                                            timestamp: Date.now(),
-                                        },
-                                    });
-
-                                    // Send completed state with insights data
-                                    dataStream.writeMessageAnnotation({
-                                        type: 'research_update',
-                                        data: {
-                                            id: 'trace-insights',
-                                            type: 'trace-insight',
-                                            status: 'completed',
-                                            title: `${insightsForTopic.metric} Analysis`,
-                                            message: `Analyzed ${insightsForTopic.metric} performance`,
-                                            timestamp: Date.now(),
-                                            traceInsight: {
-                                                metric: insightsForTopic.metric,
-                                                metricValue: insightsForTopic.metricValue,
-                                                metricType: insightsForTopic.metricType,
-                                                metricScore: insightsForTopic.metricScore as
-                                                    | 'good'
-                                                    | 'average'
-                                                    | 'poor',
-                                                metricBreakdown: insightsForTopic.metricBreakdown,
-                                                infoContent: insightsForTopic.infoContent,
-                                            },
-                                            overwrite: true,
-                                        },
-                                    });
-                                }
 
                                 const finalProgress = {
                                     id: 'research-progress',
                                     type: 'progress' as const,
                                     status: 'completed' as const,
                                     message: `Trace analysis complete`,
-                                    completedSteps: 1,
-                                    totalSteps: 1,
+                                    completedSteps: totalSteps + (depth === 'advanced' ? 2 : 1),
+                                    totalSteps: totalSteps + (depth === 'advanced' ? 2 : 1),
                                     isComplete: true,
                                     timestamp: Date.now(),
                                 };
@@ -1411,9 +940,15 @@ IMPORTANT:
                                     overwrite: true,
                                 });
 
+                                researchReport.mergeIntoDataStream(dataStream);
+
                                 return {
                                     metric: args.metric,
-                                    metricValue: args.metricValue,
+                                    metricValue: insightsForTopic.metricValue,
+                                    metricType: insightsForTopic.metricType,
+                                    metricScore: insightsForTopic.metricScore as 'good' | 'average' | 'poor',
+                                    metricBreakdown: insightsForTopic.metricBreakdown,
+                                    insightsForTopic,
                                 };
                             },
                         }),
@@ -1425,40 +960,43 @@ IMPORTANT:
                         console.log('Fin reason[2]: ', event.finishReason);
                         console.log('Reasoning[2]: ', event.reasoning);
                         console.log('reasoning details[2]: ', event.reasoningDetails);
+                        console.log('Messages [2]: ', event.response.messages);
                     },
                     onError(event) {
                         console.log('Error: ', event.error);
                     },
                 });
 
-                traceReportStream.mergeIntoDataStream(dataStream, {
+                return traceReportStream.mergeIntoDataStream(dataStream, {
                     experimental_sendStart: true,
                 });
 
-                console.log('######################### traceReportStream #################################');
+                // console.log('######################### traceReportStream #################################');
 
-                const response = streamText({
-                    model: scira.languageModel(model),
-                    system: responseGuidelines,
-                    experimental_transform: smoothStream({
-                        chunking: 'word',
-                        delayInMs: 15,
-                    }),
-                    messages: [...convertToCoreMessages(messages), ...(await toolsResult.response).messages],
-                    onFinish(event) {
-                        console.log('###########onFinish###########');
-                        console.log('Fin reason[2]: ', event.finishReason);
-                        console.log('Reasoning[2]: ', event.reasoning);
-                        console.log('reasoning details[2]: ', event.reasoningDetails);
-                        console.log('Steps[2] ', event.steps);
-                        console.log('Messages[2]: ', event.response.messages);
-                    },
-                    onError(event) {
-                        console.log('Error: ', event.error);
-                    },
-                });
+                // const response = streamText({
+                //     model: scira.languageModel(model),
+                //     system: responseGuidelines,
+                //     experimental_transform: smoothStream({
+                //         chunking: 'word',
+                //         delayInMs: 15,
+                //     }),
+                //     messages: [...convertToCoreMessages(messages), ...(await toolsResult.response).messages],
+                //     onFinish(event) {
+                //         console.log('###########onFinish###########');
+                //         console.log('Fin reason[2]: ', event.finishReason);
+                //         console.log('Reasoning[2]: ', event.reasoning);
+                //         console.log('reasoning details[2]: ', event.reasoningDetails);
+                //         console.log('Steps[2] ', event.steps);
+                //         console.log('Messages[2]: ', event.response.messages);
+                //     },
+                //     onError(event) {
+                //         console.log('Error: ', event.error);
+                //     },
+                // });
 
-                return response.mergeIntoDataStream(dataStream);
+                // return response.mergeIntoDataStream(dataStream, {
+                //     experimental_sendFinish: true,
+                // });
             },
         });
     } else {
